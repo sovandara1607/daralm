@@ -1,0 +1,44 @@
+# DaraLM-10M — first medium-scale experiment (Phase 6).
+#
+# A real step up from DaraLM-Tiny's pipeline-verification role: this is
+# where we start caring about actual convergence behavior, throughput, and
+# generation quality on real held-out data, not just "does it run".
+#
+# batch_size=8 (not 16) is deliberate, discovered by direct measurement, not
+# guessed: on this Apple Silicon MPS backend, a single forward+backward pass
+# at batch_size=16, seq_len=1024 took 18-55 SECONDS (and got worse, not
+# better, across repeated steps) versus ~0.7s at batch_size=8 — a >20x
+# cliff for 2x the data, not the ~2x you'd expect from linear scaling.
+# Memory was never the bottleneck (peaked under 2GB either way); this is a
+# pure MPS-backend performance pathology at that specific tensor shape.
+# gradient_accumulation_steps=2 recovers the same effective batch size (16)
+# for training dynamics without tripping the cliff — a direct, concrete
+# case for why gradient accumulation exists (Phase 4), beyond the usual
+# "doesn't fit in memory" framing.
+model_name: daralm-10m
+tags: ["10m"]
+
+architecture:
+  type: decoder_only_transformer
+  vocab_size: 16000  # matches the shared DaraLM tokenizer trained in Phase 2
+  hidden_size: 288
+  num_layers: 6
+  num_attention_heads: 6
+  intermediate_size: 1152   # 4x hidden_size, standard GPT-style ratio
+  max_position_embeddings: 1024
+  dropout: 0.1
+
+training:
+  precision: bf16
+  optimizer: adamw
+  learning_rate: 0.0003
+  weight_decay: 0.1
+  gradient_clip: 1.0
+  batch_size: 8
+  gradient_accumulation_steps: 2
+  max_steps: 600
+  warmup_steps: 30
+  eval_interval: 60
+  save_interval: 300
+  log_interval: 15
+  seed: 42

@@ -1,0 +1,52 @@
+# DaraLM-50M-Instruct — supervised fine-tune of DaraLM-50M Base (Phase 9).
+#
+# `architecture` is a byte-for-byte copy of configs/50m.yaml. It has to be:
+# scripts/train_sft.py loads the Base checkpoint's weights into a freshly
+# constructed model built from *this* config, and any architecture mismatch
+# (different hidden_size, vocab_size, etc.) would make `load_state_dict`
+# fail loudly — which is the point, but there's no reason to court it.
+# Only `training` differs, and `model_name` so checkpoints land in their own
+# `checkpoints/daralm-50m-instruct/` directory, never overwriting Base.
+
+model_name: daralm-50m-instruct
+tags: ["50m", "instruct", "sft"]
+
+architecture:
+  type: decoder_only_transformer
+  vocab_size: 16000
+  hidden_size: 512
+  num_layers: 8
+  num_attention_heads: 8
+  intermediate_size: 2048
+  max_position_embeddings: 1024
+  dropout: 0.1
+
+training:
+  precision: bf16
+  optimizer: adamw
+  # SFT uses a much lower LR than pretraining (3e-4) — the model already
+  # has real language ability from Base; SFT should nudge it toward
+  # following the instruction/response format, not relearn from scratch.
+  # A pretrain-sized LR on a ~300-example dataset would overfit or
+  # destroy Base's learned weights within a handful of steps.
+  learning_rate: 0.00005
+  weight_decay: 0.1
+  gradient_clip: 1.0
+  # batch_size=4 reuses the exact shape Phase 6-7 proved safe on this
+  # hardware's MPS backend (severe throughput cliff above it at
+  # seq_len=1024 for this same architecture). Instruction examples are
+  # padded to block_size=512 (see scripts/train_sft.py), not 1024, but
+  # there's no upside to re-exploring the cliff boundary for a dataset
+  # this small — batch_size=4 comfortably finishes an epoch in seconds
+  # either way.
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  # ~275 train examples / effective batch 16 = ~17 steps/epoch.
+  # 100 steps ~= 6 epochs — enough for the model to actually shift toward
+  # the chat template's structure without wildly overfitting the small set.
+  max_steps: 100
+  warmup_steps: 10
+  eval_interval: 20
+  save_interval: 50
+  log_interval: 5
+  seed: 42

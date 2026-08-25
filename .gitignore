@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+# (uv.lock IS committed for reproducibility — do not ignore it)
+
+# Environment / secrets
+.env
+.env.local
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ML / project artifacts — large or generated, not source
+data/raw/*
+!data/raw/.gitkeep
+data/cleaned/*
+!data/cleaned/.gitkeep
+data/tokenized/*
+!data/tokenized/.gitkeep
+checkpoints/*
+!checkpoints/.gitkeep
+experiments/*
+!experiments/.gitkeep
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+wandb/

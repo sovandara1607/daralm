@@ -1,0 +1,54 @@
+# DaraLM-50M — first real pretraining target.
+#
+# ~50M parameters (see `scripts/inspect_model_config.py` for the exact
+# computed count). Decoder-only Transformer, Khmer + English.
+#
+# vocab_size note: the original spec example used 32,000. We trained the
+# actual Phase 2 tokenizer at 16,000 (within the spec's stated 16k-32k
+# range) because the current corpus (~2,700 training documents) is still
+# modest — a 32k vocab on that little data risks many merge rules that only
+# ever fire a handful of times, wasting embedding capacity on undertrained
+# tokens. Every DaraLM config must share one tokenizer, so this value has
+# to track whatever was actually trained; retrain the tokenizer at 32,000
+# once a substantially larger corpus is collected, then update this file
+# (and tiny.yaml) to match.
+
+model_name: daralm-50m
+tags: ["50m"]
+
+architecture:
+  type: decoder_only_transformer
+  vocab_size: 16000  # matches the shared DaraLM tokenizer trained in Phase 2 (see note below)
+  hidden_size: 512
+  num_layers: 8
+  num_attention_heads: 8
+  intermediate_size: 2048
+  max_position_embeddings: 1024
+  dropout: 0.1
+
+training:
+  precision: bf16
+  optimizer: adamw
+  learning_rate: 0.0003
+  weight_decay: 0.1
+  gradient_clip: 1.0
+  # batch_size=4 (not 32) is measured, not guessed. Phase 6 found a severe
+  # Apple Silicon MPS performance cliff at a certain batch*seq_len shape for
+  # DaraLM-10M (6 layers, hidden=288); this larger model (8 layers,
+  # hidden=512) hits the same pathology at an even LOWER batch size:
+  #   isolated batch=4, seq=1024: 0.70-0.82s/step steady-state, ~0.94GB
+  #   isolated batch=8, seq=1024: 10.2s for a SINGLE step (>12x slower for
+  #                                2x the data; memory was never the issue,
+  #                                only ~1.5GB)
+  # gradient_accumulation_steps=4 recovers an effective batch size of 16
+  # (down from the original placeholder's 32, given this hardware's actual
+  # measured throughput — see README's Phase 7 section for the full
+  # reasoning and how max_steps was chosen to fit a real session).
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  max_steps: 300
+  warmup_steps: 20
+  eval_interval: 50
+  save_interval: 150
+  log_interval: 10
+  seed: 42

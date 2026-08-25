@@ -1,0 +1,43 @@
+# Keep the Docker build context small and reproducible — mirrors .gitignore,
+# plus a few things .gitignore doesn't need to care about (the .git history
+# itself, editor state).
+#
+# Deliberately NOT ignored: checkpoints/, configs/, data/. Those are mounted
+# as volumes at `docker run` time (see Makefile's `docker-run` target and
+# README's Phase 10 section) rather than baked into the image — a 33M-param
+# checkpoint is ~100s of MB, and baking one in would mean rebuilding the
+# image every time a different model gets served, defeating the whole point
+# of api/main.py already being config/env-var driven about which checkpoint
+# to load.
+
+.git/
+.gitignore
+.dockerignore
+
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+.env
+.env.local
+
+checkpoints/
+configs/
+data/
+experiments/
+
+.claude/
+*.md
+!README.md
