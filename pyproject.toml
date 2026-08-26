@@ -16,6 +16,8 @@ dependencies = [
     "sentencepiece>=0.2,<1",
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.30,<1",
+    "prometheus-client>=0.20,<1",
+    "matplotlib>=3.10.9",
 ]
 
 [dependency-groups]

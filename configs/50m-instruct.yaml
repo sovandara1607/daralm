@@ -33,20 +33,26 @@ training:
   weight_decay: 0.1
   gradient_clip: 1.0
   # batch_size=4 reuses the exact shape Phase 6-7 proved safe on this
-  # hardware's MPS backend (severe throughput cliff above it at
-  # seq_len=1024 for this same architecture). Instruction examples are
-  # padded to block_size=512 (see scripts/train_sft.py), not 1024, but
-  # there's no upside to re-exploring the cliff boundary for a dataset
-  # this small — batch_size=4 comfortably finishes an epoch in seconds
-  # either way.
+  # hardware's MPS backend. batch=4 -> 0.510s/step, batch=8 -> 1.379s/step
+  # (a real but mild ~2.7x slowdown for 2x the data, not a cliff),
+  # batch=16 -> crashed outright with "MPS backend out of memory" (17.54
+  # GiB allocated). batch_size=4 stays the safety-margined choice.
   batch_size: 4
   gradient_accumulation_steps: 4
-  # ~275 train examples / effective batch 16 = ~17 steps/epoch.
-  # 100 steps ~= 6 epochs — enough for the model to actually shift toward
-  # the chat template's structure without wildly overfitting the small set.
-  max_steps: 100
-  warmup_steps: 10
-  eval_interval: 20
-  save_interval: 50
-  log_interval: 5
+  # Dataset scaled up again (784 -> 2,313 train examples, ~3x) by fetching
+  # more of the same already-vetted sources (--n-english 1500 --n-khmer
+  # 1200) — the same "scale up the existing recipe" move that measurably
+  # (if partially) helped grammar correction (README's Stage 2 item 3).
+  # 2,313 / effective batch 16 = 144.6 steps/epoch; 900 steps ~= 6.2
+  # epochs, matching the original run's ~6-epoch budget scaled to the
+  # larger dataset rather than assumed to transfer unchanged.
+  # Real token-length measurement on this dataset: max=777, p99=591 —
+  # scripts/train_sft.py's block_size must be passed explicitly at
+  # >= 832 (not its own default of 512) or ~1% of examples get silently
+  # dropped by InstructionDataset for exceeding block_size.
+  max_steps: 900
+  warmup_steps: 90
+  eval_interval: 100
+  save_interval: 300
+  log_interval: 20
   seed: 42

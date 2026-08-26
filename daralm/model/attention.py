@@ -91,13 +91,37 @@ class CausalSelfAttention(nn.Module):
         x: torch.Tensor,
         rotary_cos: torch.Tensor,
         rotary_sin: torch.Tensor,
-    ) -> torch.Tensor:
+        past_key_value: tuple[torch.Tensor, torch.Tensor] | None = None,
+        use_cache: bool = False,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
         """Args:
-            x: (batch, seq_len, hidden_size)
-            rotary_cos, rotary_sin: (seq_len, head_dim), from `RotaryEmbedding`
+            x: (batch, seq_len, hidden_size) — the *new* tokens only when a
+                cache is in use, not the full sequence so far.
+            rotary_cos, rotary_sin: (seq_len, head_dim), from
+                `RotaryEmbedding`, already computed at the correct absolute
+                position offset by the caller.
+            past_key_value: this layer's cached (key, value) from every
+                prior call, each shaped (batch, heads, past_len, head_dim),
+                or None on a fresh/full-sequence forward pass (unchanged
+                default behavior).
+            use_cache: if True, also return this call's (key, value) —
+                concatenated with `past_key_value` if one was given — for
+                the caller to pass back in on the next step. Default False,
+                so every pre-existing call site is unaffected.
 
         Returns:
-            (batch, seq_len, hidden_size)
+            (output, present_key_value) — output is (batch, seq_len,
+            hidden_size) as before; present_key_value is the new cache
+            entry when `use_cache=True`, else None.
+
+        Why KV-caching pays off: without it, generating token N+1 means
+        recomputing K/V for all N prior tokens all over again — the
+        generation loop this scheme replaces was O(sequence_length^2)
+        total work. Keys/values are the same tensors every step regardless
+        of what gets generated next (only Q, computed fresh from the one
+        new token, depends on it) — caching them turns the loop into
+        O(sequence_length) total work, the standard optimization behind
+        every production LLM's autoregressive decoding.
         """
         batch_size, seq_len, _ = x.shape
 
@@ -105,16 +129,35 @@ class CausalSelfAttention(nn.Module):
         k = self._split_heads(self.k_proj(x), batch_size, seq_len)
         v = self._split_heads(self.v_proj(x), batch_size, seq_len)
 
+        # RoPE rotates only the *new* q/k at their true absolute position
+        # (rotary_cos/sin already reflect that offset) — cached keys were
+        # already rotated when they were first computed, so re-rotating
+        # them here would double-rotate and corrupt the cache.
         q, k = apply_rotary_pos_emb(q, k, rotary_cos, rotary_sin)
 
-        # Scaled dot-product attention scores: (batch, heads, seq_len, seq_len).
+        if past_key_value is not None:
+            past_k, past_v = past_key_value
+            k = torch.cat([past_k, k], dim=2)
+            v = torch.cat([past_v, v], dim=2)
+        present_key_value = (k, v) if use_cache else None
+
+        past_len = k.size(2) - seq_len  # 0 when there's no cache yet
+
+        # Scaled dot-product attention scores: (batch, heads, seq_len, kv_len).
         # Scaling by 1/sqrt(head_dim) keeps the dot products (and therefore
         # the softmax) from growing too large in magnitude as head_dim
         # grows, which would otherwise push softmax into a near-one-hot,
         # near-zero-gradient regime.
         scores = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
 
-        mask = self.causal_mask[:seq_len, :seq_len]
+        # Query position (past_len + i) may attend to key position j for
+        # any j <= past_len + i. Every cached key (j < past_len) always
+        # qualifies; among the new keys, this reduces to the same
+        # lower-triangular mask as the no-cache case. Slicing
+        # `self.causal_mask` at the right rows/columns gives exactly that
+        # combined mask in one step — for past_len=0 (no cache) this is
+        # byte-identical to the original `causal_mask[:seq_len, :seq_len]`.
+        mask = self.causal_mask[past_len : past_len + seq_len, : past_len + seq_len]
         scores = scores.masked_fill(~mask, float("-inf"))
 
         probs = torch.softmax(scores, dim=-1)
@@ -124,4 +167,4 @@ class CausalSelfAttention(nn.Module):
         out = out.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
 
         out = self.o_proj(out)
-        return self.resid_dropout(out)
+        return self.resid_dropout(out), present_key_value

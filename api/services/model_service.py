@@ -27,7 +27,7 @@ from pathlib import Path
 import torch
 from starlette.concurrency import run_in_threadpool
 
-from daralm.inference.generator import generate
+from daralm.inference.generator import generate, generate_chat
 from daralm.model.config import ModelConfig
 from daralm.model.transformer import DaraLMTransformer
 from daralm.tokenizer.tokenizer import DaraLMTokenizer
@@ -185,3 +185,34 @@ class ModelService:
             # — an honest re-measurement, not the requested cap echoed back.
             "tokens_generated": max(generated_len, 0),
         }
+
+    async def chat(
+        self,
+        instruction: str,
+        max_new_tokens: int,
+        temperature: float,
+        top_p: float,
+        top_k: int,
+        repetition_penalty: float,
+    ) -> dict:
+        """Run chat-templated generation off the event loop — same
+        `run_in_threadpool` reasoning as `generate()` above.
+
+        Unlike `generate()`, no prompt-length subtraction is needed:
+        `generate_chat()` already returns only the assistant's response
+        text (the chat-template prompt is stripped before it's returned),
+        so `tokens_generated` is a direct encode-and-count, not a diff.
+        """
+        response_text = await run_in_threadpool(
+            generate_chat,
+            self.model,
+            self.tokenizer,
+            instruction,
+            max_new_tokens,
+            temperature,
+            top_k,
+            top_p,
+            repetition_penalty,
+        )
+        tokens_generated = len(self.tokenizer.encode(response_text, add_bos=False, add_eos=False))
+        return {"response": response_text, "tokens_generated": tokens_generated}

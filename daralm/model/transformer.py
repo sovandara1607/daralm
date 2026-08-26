@@ -48,6 +48,11 @@ class DaraLMOutput:
 
     logits: torch.Tensor
     loss: torch.Tensor | None = None
+    hidden_states: torch.Tensor | None = None
+    # One (key, value) tuple per layer when `use_cache=True`, else None —
+    # see `forward`'s docstring and `daralm.inference.generator` for how
+    # this is actually used to speed up autoregressive generation.
+    past_key_values: list[tuple[torch.Tensor, torch.Tensor]] | None = None
 
 
 class DaraLMTransformer(nn.Module):
@@ -137,28 +142,64 @@ class DaraLMTransformer(nn.Module):
             if name.endswith("o_proj.weight") or name.endswith("down_proj.weight"):
                 nn.init.normal_(param, mean=0.0, std=residual_std)
 
-    def forward(self, input_ids: torch.Tensor, labels: torch.Tensor | None = None) -> DaraLMOutput:
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        labels: torch.Tensor | None = None,
+        return_hidden_states: bool = False,
+        past_key_values: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
+        use_cache: bool = False,
+    ) -> DaraLMOutput:
         """Args:
-            input_ids: (batch, seq_len) token IDs.
+            input_ids: (batch, seq_len) token IDs — the *new* tokens only
+                when `past_key_values` is given (e.g. just the one
+                newly-sampled token during cached generation), not the
+                full sequence so far.
             labels: (batch, seq_len) token IDs to compute loss against — pass
                 `input_ids` itself for standard causal LM training. If None,
                 only logits are returned (e.g. for inference).
+            return_hidden_states: if True, also return the post-final-norm,
+                pre-LM-head hidden states (batch, seq_len, hidden_size) —
+                what a task head (e.g. `daralm.model.classification_head`)
+                pools over, rather than the vocab-sized logits every
+                existing caller (causal-LM training, `generate()`) uses.
+                Default False and additive-only: every existing call site
+                is unaffected, `hidden_states` stays `None` unless asked
+                for.
+            past_key_values: one (key, value) tuple per layer, from a prior
+                call with `use_cache=True`, or None for a normal
+                full-sequence forward pass (unchanged default behavior —
+                every pre-existing call site passes neither of these two
+                new arguments and sees no behavior change at all).
+            use_cache: if True, also return this call's per-layer (key,
+                value) pairs (concatenated with `past_key_values` if given)
+                for the caller to pass back in on the next step. See
+                `daralm.model.attention.CausalSelfAttention.forward`'s
+                docstring for why this turns generation from O(n^2) into
+                O(n) total work.
 
         Returns:
-            DaraLMOutput(logits of shape (batch, seq_len, vocab_size), loss).
+            DaraLMOutput(logits of shape (batch, seq_len, vocab_size), loss,
+            hidden_states of shape (batch, seq_len, hidden_size) or None,
+            past_key_values: list of per-layer (key, value) or None).
         """
         batch_size, seq_len = input_ids.shape
-        if seq_len > self.config.max_position_embeddings:
+        past_len = past_key_values[0][0].size(2) if past_key_values is not None else 0
+        if past_len + seq_len > self.config.max_position_embeddings:
             raise ValueError(
-                f"seq_len ({seq_len}) exceeds max_position_embeddings "
-                f"({self.config.max_position_embeddings})"
+                f"past_len + seq_len ({past_len + seq_len}) exceeds "
+                f"max_position_embeddings ({self.config.max_position_embeddings})"
             )
 
         x = self.token_embedding(input_ids)
-        cos, sin = self.rotary_embedding(seq_len, device=input_ids.device)
+        cos, sin = self.rotary_embedding(seq_len, device=input_ids.device, offset=past_len)
 
-        for block in self.blocks:
-            x = block(x, cos, sin)
+        present_key_values: list[tuple[torch.Tensor, torch.Tensor]] = []
+        for i, block in enumerate(self.blocks):
+            layer_past = past_key_values[i] if past_key_values is not None else None
+            x, present = block(x, cos, sin, layer_past, use_cache)
+            if use_cache:
+                present_key_values.append(present)
 
         x = self.final_norm(x)
         logits = self.lm_head(x)
@@ -173,7 +214,12 @@ class DaraLMTransformer(nn.Module):
                 ignore_index=self.pad_token_id,
             )
 
-        return DaraLMOutput(logits=logits, loss=loss)
+        return DaraLMOutput(
+            logits=logits,
+            loss=loss,
+            hidden_states=x if return_hidden_states else None,
+            past_key_values=present_key_values if use_cache else None,
+        )
 
     def num_parameters(self, exclude_tied: bool = True) -> int:
         """Count trainable parameters.

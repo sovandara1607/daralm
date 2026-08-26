@@ -1,0 +1,54 @@
+# DaraLM-50M-JSON — supervised fine-tune of DaraLM-50M Base on structured
+# JSON generation (Stage 2, item 4 of ROADMAP_NLP_PLATFORM.md), the
+# roadmap's explicit go/no-go gate before NER, tool calling, or NL-to-SQL.
+#
+# `architecture` is a byte-for-byte copy of configs/50m.yaml, same reason
+# as every other SFT config in this project: scripts/train_sft.py loads
+# Base's weights into a freshly constructed model built from *this*
+# config, so any architecture mismatch would make load_state_dict fail
+# loudly.
+#
+# Data: data/structured_json/instructions_{train,val,test}.jsonl, built by
+# scripts/prepare_structured_json_dataset.py — synthetic, template-
+# generated (text, JSON) pairs, no external dataset.
+#
+# Training budget set directly from grammar correction's finding (Stage 2
+# item 3, README.md): a small budget (400 steps/3,000 examples) produced
+# a real generalization gap even after an unrelated bug was fixed, and
+# scaling up 4x/6x narrowed but didn't close it. Starting here with that
+# same scaled budget rather than re-discovering the lesson from a small
+# run first.
+
+model_name: daralm-50m-json
+tags: ["50m", "structured-json", "sft"]
+
+architecture:
+  type: decoder_only_transformer
+  vocab_size: 16000
+  hidden_size: 512
+  num_layers: 8
+  num_attention_heads: 8
+  intermediate_size: 2048
+  max_position_embeddings: 1024
+  dropout: 0.1
+
+training:
+  precision: bf16
+  optimizer: adamw
+  # Same low-LR reasoning as every other SFT config in this project: Base
+  # already has real language ability, SFT should nudge it toward this
+  # new task's format, not relearn from scratch.
+  learning_rate: 0.00005
+  weight_decay: 0.1
+  gradient_clip: 1.0
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  # 12,000 train examples / effective batch 16 = 750 steps/epoch; 2400
+  # steps = 3.2 epochs — the same budget scale that measurably (if only
+  # partially) helped grammar correction.
+  max_steps: 2400
+  warmup_steps: 100
+  eval_interval: 200
+  save_interval: 400
+  log_interval: 20
+  seed: 42

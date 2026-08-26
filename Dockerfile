@@ -43,6 +43,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY daralm/ ./daralm/
 COPY api/ ./api/
+COPY web/ ./web/
 RUN uv sync --frozen --no-dev
 
 # --- runtime -------------------------------------------------------------
@@ -68,6 +69,7 @@ WORKDIR /app
 COPY --from=builder --chown=daralm:daralm /app/.venv /app/.venv
 COPY --from=builder --chown=daralm:daralm /app/daralm /app/daralm
 COPY --from=builder --chown=daralm:daralm /app/api /app/api
+COPY --from=builder --chown=daralm:daralm /app/web /app/web
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1

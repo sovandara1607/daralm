@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_model_service
+from api.observability import record_tokens_generated
 from api.schemas.generate import GenerateRequest, GenerateResponse
 from api.services.model_service import ModelService
 
@@ -24,4 +25,5 @@ async def generate_text(
         repetition_penalty=body.repetition_penalty,
         stop_on_eos=body.stop_on_eos,
     )
+    record_tokens_generated("generate", result["tokens_generated"])
     return GenerateResponse(**result, model=service.config.model_name)

@@ -1,18 +1,20 @@
 #!/usr/bin/env python
-"""Build the Phase 9 instruction-tuning dataset: English (Alpaca) + hand-authored Khmer.
+"""Build the instruction-tuning dataset: English (Alpaca) + Khmer (real + hand-authored).
 
 Same discipline as Phase 1's `prepare_dataset.py`: fetch -> clean -> dedupe
 -> split -> report, with every source's license recorded, not just
 downloaded and forgotten (spec section 30).
 
-No large public Khmer instruction-tuning dataset was readily available, so
-the Khmer half of this dataset (`data/instructions/khmer_handauthored.jsonl`)
-is hand-written for this project — 25 short factual instruction/response
-pairs, clearly labeled `"source": "handauthored"` in every record and in
-the manifest, not presented as if it were sourced data.
+Phase 9 originally shipped only 25 hand-authored Khmer examples (no
+suitable public Khmer instruction-tuning dataset was found at the time).
+A later pass found one: `saillab/alpaca_khmer_taco`, a ~50K-row Khmer
+translation of Alpaca. It's now the primary Khmer source; the 25
+hand-authored examples (`data/instructions/khmer_handauthored.jsonl`) are
+kept as a small supplement, still clearly labeled `"source":
+"handauthored"` in every record, never presented as if they were sourced.
 
 Usage:
-    python scripts/prepare_instruction_dataset.py --n-english 300
+    python scripts/prepare_instruction_dataset.py --n-english 500 --n-khmer 400
 """
 
 from __future__ import annotations
@@ -28,7 +30,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from daralm.data.cleaner import clean_text  # noqa: E402
 from daralm.data.dataset import split_dataset  # noqa: E402
 from daralm.data.deduplication import deduplicate  # noqa: E402
-from daralm.data.loader import fetch_alpaca_sample, load_jsonl, save_jsonl  # noqa: E402
+from daralm.data.loader import (  # noqa: E402
+    fetch_alpaca_khmer_sample,
+    fetch_alpaca_sample,
+    load_jsonl,
+    save_jsonl,
+)
 from daralm.utils.logging import get_logger  # noqa: E402
 from daralm.utils.seed import set_seed  # noqa: E402
 
@@ -41,6 +48,9 @@ MIN_RESPONSE_CHARS = 2
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-english", type=int, default=300, help="Alpaca examples to fetch")
+    parser.add_argument(
+        "--n-khmer", type=int, default=300, help="Real Khmer (alpaca_khmer_taco) examples to fetch"
+    )
     parser.add_argument(
         "--khmer-file",
         type=Path,
@@ -93,30 +103,34 @@ def main() -> None:
     english_records, english_manifest = fetch_alpaca_sample(args.n_english)
     save_jsonl(english_records, raw_dir / "instructions_alpaca.jsonl")
 
+    khmer_real_records, khmer_real_manifest = fetch_alpaca_khmer_sample(args.n_khmer)
+    save_jsonl(khmer_real_records, raw_dir / "instructions_alpaca_khmer.jsonl")
+
     if not args.khmer_file.exists():
         raise FileNotFoundError(
             f"Khmer instruction file not found: {args.khmer_file}. This project ships a "
             "hand-authored one at data/instructions/khmer_handauthored.jsonl."
         )
-    khmer_records = load_jsonl(args.khmer_file, required_field="instruction")
-    khmer_manifest = {
+    khmer_handauthored_records = load_jsonl(args.khmer_file, required_field="instruction")
+    khmer_handauthored_manifest = {
         "source": "handauthored",
         "language": "km",
-        "description": "Hand-written for this project (no suitable public Khmer "
-        "instruction-tuning dataset was available) — not sourced from an external corpus.",
-        "examples": len(khmer_records),
+        "description": "Hand-written for this project — a small supplement to the "
+        "alpaca_khmer_taco source above, not the primary Khmer source anymore.",
+        "examples": len(khmer_handauthored_records),
     }
-    logger.info("Loaded %d hand-authored Khmer examples", len(khmer_records))
+    logger.info("Loaded %d hand-authored Khmer examples", len(khmer_handauthored_records))
 
     manifest = {
         "fetched_at": datetime.now(timezone.utc).isoformat(),
-        "sources": [english_manifest, khmer_manifest],
+        "sources": [english_manifest, khmer_real_manifest, khmer_handauthored_manifest],
     }
     manifest_path = raw_dir / "MANIFEST_instructions.json"
     with manifest_path.open("w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
     logger.info("Wrote manifest to %s", manifest_path)
 
+    khmer_records = khmer_real_records + khmer_handauthored_records
     all_records = english_records + khmer_records
     total_seen = len(all_records)
 
@@ -148,14 +162,18 @@ def main() -> None:
     print()
     print("=== Instruction Dataset Preparation Summary ===")
     print(
-        f"English (Alpaca):    {len(english_records)} examples, "
+        f"English (Alpaca):        {len(english_records)} examples, "
         f"license: {english_manifest['license']}"
     )
-    print(f"Khmer (handauthored): {len(khmer_records)} examples")
-    print(f"Total fetched:       {total_seen}")
-    print(f"Dropped (too short): {dropped}")
-    print(f"Duplicates removed:  {duplicate_count}")
-    print(f"Final unique:        {len(deduped_records)}")
+    print(
+        f"Khmer (alpaca_khmer_taco): {len(khmer_real_records)} examples, "
+        f"license: {khmer_real_manifest['license']}"
+    )
+    print(f"Khmer (handauthored):    {len(khmer_handauthored_records)} examples")
+    print(f"Total fetched:           {total_seen}")
+    print(f"Dropped (too short):     {dropped}")
+    print(f"Duplicates removed:      {duplicate_count}")
+    print(f"Final unique:            {len(deduped_records)}")
     print(f"Split sizes:         { {k: len(v) for k, v in splits.items()} }")
 
 

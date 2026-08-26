@@ -23,16 +23,16 @@ Decoder-only Transformer (GPT-style), implemented from scratch:
 ## Languages
 
 Khmer and English, trained on a roughly balanced bilingual corpus.
-Training corpus was 49.83% Khmer, 50.17% English by document count.
+Training corpus was 49.81% Khmer, 50.19% English by document count.
 
 ## Training Data
 
-- 2,990 documents, 37,945,756 characters, 5,409,122 words after cleaning and deduplication
-- Split: 2,691 train / 149 val / 150 test documents
-- Duplicate rate: 0.07%
+- 15,939 documents, 113,646,816 characters, 15,021,255 words after cleaning and deduplication
+- Split: 14,345 train / 796 val / 798 test documents
+- Duplicate rate: 0.26%
 - Sources:
-  - **wikipedia-km**: wikimedia/wikipedia (20231101.km), license: CC BY-SA 4.0 / GFDL (Wikimedia Foundation), 1,500 documents fetched
-  - **wikipedia-en**: wikimedia/wikipedia (20231101.en), license: CC BY-SA 4.0 / GFDL (Wikimedia Foundation), 1,500 documents fetched
+  - **wikipedia-km**: wikimedia/wikipedia (20231101.km), license: CC BY-SA 4.0 / GFDL (Wikimedia Foundation), 8,000 documents fetched
+  - **wikipedia-en**: wikimedia/wikipedia (20231101.en), license: CC BY-SA 4.0 / GFDL (Wikimedia Foundation), 8,000 documents fetched
 
 No instruction-tuning or preference data — this is a base language model, trained purely on causal next-token prediction over raw Wikipedia text.
 
@@ -51,35 +51,35 @@ Selected over BPE based on measured evaluation: unigram (score 3.474 vs 3.450 �
 | Weight decay | 0.1 |
 | Precision | bf16 |
 | Batch size (micro / accumulation) | 4 × 4 |
-| Max steps (this checkpoint) | 300 |
+| Max steps (this checkpoint) | 1500 |
 | Warmup steps | 20 |
 | Seed | 42 |
 
 ## Training Tokens
 
-~4,915,200 tokens seen (16 sequences × 1024 tokens/sequence × 300 optimizer steps). The training corpus (Phase 1) is ~8.25M tokens at this tokenizer's compression rate, so this checkpoint has seen well under a handful of full passes over it — not enough for the memorization check below to be a strong test.
+~24,576,000 tokens seen (16 sequences × 1024 tokens/sequence × 1500 optimizer steps). The training corpus is ~28,938,878 tokens at this tokenizer's real, measured compression rate (not estimated) — so this checkpoint has seen roughly 0.85x the corpus, well under one full pass.
 
 ## Compute Used
 
 - Device: Apple Silicon (MPS) — a consumer laptop, not a training cluster
-- Throughput: avg 6867 tokens/sec
-- Peak device memory: 0.53 GB
+- Throughput: avg 6190 tokens/sec
+- Peak device memory: 0.51 GB
 - Batch size was set empirically after direct benchmarking found a severe MPS-backend performance cliff at larger batch sizes for this model size (see README Phase 7) — not a guess.
 
 ## Evaluation Results
 
-- Final validation loss: 6.3519, perplexity: 573.6
+- Final validation loss: 5.2041, perplexity: 182.0
 - Overfitting check: no overfitting signal — validation tracking training, still improving
-- Memorization check (spec section 15): 0.0280 average token-match rate over 30 real training documents — 448x the random-chance baseline, but still low in absolute terms; no concerning verbatim memorization detected at this scale/step count.
+- Memorization check (spec section 15): 0.0327 average token-match rate over 30 real training documents — 523x the random-chance baseline, but still low in absolute terms; no concerning verbatim memorization detected at this scale/step count.
 - Fixed-prompt generation samples (temperature=0.8, top-p=0.9):
-  - **english**: `Cambodia is a country in សរសេរ ព្រះ្រៈ អតីតកាលន ស្ថិតនៅក្នុងបតិបង្កើតរសមខ្លួនស្កាង ពួកនាំណ្នា  ហេតុនេះ លោក សង្គ្រាមឫ ឪពុក ជាការ។ កសាងទាំងឡាយដែលមាន។ ថវ...`
-  - **khmer**: `កម្ពុជាជាប្រទេសមួយនៅ ប្រទេសបុរាណ ក្រុងទុកជាឡើងនឹងប្រអ្នកពីសំរាប់ ក្នុងករណីងខេត្ត ប់ធ៍ សេចក្ដី ឬ និង ប៉ា មហាសមុទ្រជានៅ១៣ អាង ត្រីពីរភូមិាថា ពួកពេល ខាងក...`
-  - **mixed**: `ខ្ញុំចង់រៀន machine learning និង ជ្រុងហែន ស្វាប៉ូែ ផែនការវត្តតាមអានិងពុំស្ទឹងញ ទទី១ បរិភោគយាយ ឯ អ្នកសមជាអ្នកកិត្តិយសពាក្យ ហើយចុងអង្ទឹក ធម្មសសសក ការមាន...`
+  - **english**: `Cambodia is a country in the western Sea of the Middle East. The name of the Assyrian period is: The Name of the India of the Northern Ireland is the ...`
+  - **khmer**: `កម្ពុជាជាប្រទេសមួយនៅសិង្ហបុរី។ ព្រះនាមស.ក. ១៣) ៦៣។ ការបែងចែកឡើងវិញនៅឆ្នាំ ១៩២៥។ ៣៨ នាក់ ខែមករា ប្រទេសកម្ពុជាត្រូវត្រូវធ្វើឡើងក្នុងកម្ពុជា ដែលកងទ័ពប្រទ...`
+  - **mixed**: `ខ្ញុំចង់រៀន machine learning និងមហាវលល។ កិច្ចកិច្ចមនុស្សនេះហើយ គឺជាសកលស្តីពីការតំណាង។ ក្រុមប្រឹក្សាឃុំ សង្កាត់ក្លាក្លានោះ អ្នកសង្កេតការណ៍ត្រូវសម្លាប់ ...`
 
 ## Known Limitations
 
 - **Not fluent.** At this step count, generation is grammatically fragmentary in both languages — real words and some real morphology/particles, not coherent sentences or paragraphs. This is expected at this scale, not a bug.
-- **Small corpus.** ~3,000 Wikipedia documents is a tiny fraction of what production LLMs train on. Facts, if any appear, should not be trusted.
+- **Small corpus.** ~15,939 Wikipedia documents is a tiny fraction of what production LLMs train on. Facts, if any appear, should not be trusted.
 - **Language drift.** Generation does not reliably stay in the prompt's language for its full length — an English prompt can drift into Khmer partway through.
 - **No instruction-following.** This is a base model; it continues text, it does not follow instructions or answer questions reliably.
 - **No safety tuning.** No RLHF, no content filtering, no red-teaming has been performed.

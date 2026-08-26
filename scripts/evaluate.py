@@ -35,6 +35,7 @@ DEFAULT_CHECKPOINTS = [
     Path("checkpoints/daralm-tiny"),
     Path("checkpoints/daralm-10m"),
     Path("checkpoints/daralm-50m"),
+    Path("checkpoints/daralm-150m"),
 ]
 
 

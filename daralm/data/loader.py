@@ -184,3 +184,73 @@ def fetch_alpaca_sample(n_examples: int) -> tuple[list[dict[str, Any]], dict[str
     }
     logger.info("Fetched %d instruction examples", len(records))
     return records, manifest_entry
+
+
+def fetch_alpaca_khmer_sample(n_examples: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Stream a sample of `saillab/alpaca_khmer_taco` — a real Khmer instruction
+    dataset (found while improving Phase 9's SFT data), instead of relying
+    solely on 25 hand-authored examples.
+
+    Two format quirks this dataset has that `fetch_alpaca_sample` doesn't
+    need to handle:
+
+    1. `output` is a compound string in the TaCo-paper style —
+       "Instruction in English: ... Response in English: ... Response in
+       Khmer: ...", not a plain response. Only the text after
+       "Response in Khmer:" is kept; rows without that marker are
+       incompletely-translated leftovers from the source pipeline and are
+       skipped (measured: ~17% of rows, not a rare edge case).
+    2. `input` (Alpaca's optional extra context) is empty rows encoded as
+       the *string* `"nan"`, not `None`/`""` — a `pandas`-via-`parquet`
+       artifact. Checking truthiness alone (`fetch_alpaca_sample`'s
+       approach) would incorrectly treat every empty row as "has input".
+       Unlike the English Alpaca sample, most rows here DO have a real,
+       non-empty `input` (measured: ~91%) — dropping them the way
+       `fetch_alpaca_sample` does would throw away the majority of this
+       already-scarce-language dataset, so `input` is concatenated onto
+       `instruction` instead when present.
+    """
+    from datasets import load_dataset  # local import: heavy, only needed here
+
+    logger.info("Streaming saillab/alpaca_khmer_taco (target %d examples)", n_examples)
+    stream = load_dataset("saillab/alpaca_khmer_taco", split="train", streaming=True)
+
+    marker = "Response in Khmer:"
+    records: list[dict[str, Any]] = []
+    for row in stream:
+        output = row.get("output") or ""
+        if marker not in output:
+            continue  # incompletely-translated row — no Khmer response to extract
+        response = output.split(marker, 1)[1].strip()
+
+        instruction = (row.get("instruction") or "").strip()
+        extra_input = row.get("input")
+        if extra_input is not None and str(extra_input).strip().lower() not in ("", "nan"):
+            instruction = f"{instruction}\n{str(extra_input).strip()}"
+
+        if not instruction or not response:
+            continue
+        records.append(
+            {
+                "instruction": instruction,
+                "response": response,
+                "language": "km",
+                "source": "alpaca_khmer_taco",
+            }
+        )
+        if len(records) >= n_examples:
+            break
+
+    manifest_entry = {
+        "source": "alpaca_khmer_taco",
+        "hf_dataset": "saillab/alpaca_khmer_taco",
+        "hf_url": "https://huggingface.co/datasets/saillab/alpaca_khmer_taco",
+        "license": "No explicit license tag on the HF dataset page. Treated as inheriting "
+        "Alpaca's CC BY-NC 4.0 (non-commercial) — this is a Khmer translation of Alpaca "
+        "via the TaCo method, not an independently-licensed dataset. Verify directly with "
+        "the dataset author before any commercial use.",
+        "language": "km",
+        "examples_fetched": len(records),
+    }
+    logger.info("Fetched %d Khmer instruction examples", len(records))
+    return records, manifest_entry
