@@ -7,7 +7,13 @@ import torch
 from torch.utils.data import DataLoader
 
 from daralm.data.chat_template import format_example
-from daralm.data.dataset import InstructionDataset, PackedTokenDataset, TextDataset, split_dataset
+from daralm.data.dataset import (
+    ClassificationDataset,
+    InstructionDataset,
+    PackedTokenDataset,
+    TextDataset,
+    split_dataset,
+)
 from daralm.data.deduplication import deduplicate, document_hash
 from daralm.data.loader import load_jsonl, save_jsonl
 from daralm.data.preprocessing import compute_corpus_stats, process_document
@@ -365,3 +371,99 @@ def test_instruction_dataset_works_with_dataloader(tiny_tokenizer):
     assert len(batch) == 2
     assert batch[0].shape == (2, 64)
     assert batch[1].shape == (2, 64)
+
+
+# --- ClassificationDataset --------------------------------------------------
+
+
+def _classification_records(n: int, labels: tuple[str, ...] = ("en", "km")) -> list[dict]:
+    return [
+        {"text": "hello world this is a test sentence.", "label": labels[i % len(labels)]}
+        for i in range(n)
+    ]
+
+
+def test_classification_dataset_item_shapes(tiny_tokenizer):
+    ds = ClassificationDataset(
+        _classification_records(4), tiny_tokenizer, block_size=32, label_list=["en", "km"]
+    )
+    input_ids, label = ds[0]
+    assert input_ids.shape == (32,)
+    assert label.shape == ()
+    assert label.dtype == torch.long
+
+
+def test_classification_dataset_label2id_follows_label_list_order(tiny_tokenizer):
+    # label_list order defines label2id — "km" is index 0, "en" is index 1,
+    # deliberately not alphabetical, to prove the mapping follows the
+    # given list rather than some implicit sort.
+    records = [
+        {"text": "hello world this is a test sentence.", "label": "km"},
+        {"text": "another different sentence here.", "label": "en"},
+    ]
+    ds = ClassificationDataset(records, tiny_tokenizer, block_size=32, label_list=["km", "en"])
+    assert ds.label2id == {"km": 0, "en": 1}
+    _, label0 = ds[0]
+    _, label1 = ds[1]
+    assert label0.item() == 0  # "km"
+    assert label1.item() == 1  # "en"
+
+
+def test_classification_dataset_pads_short_examples(tiny_tokenizer):
+    ds = ClassificationDataset(
+        [{"text": "short", "label": "en"}], tiny_tokenizer, block_size=32, label_list=["en", "km"]
+    )
+    input_ids, _ = ds[0]
+    assert (input_ids == tiny_tokenizer.pad_id).any()  # real padding present
+
+
+def test_classification_dataset_truncates_long_examples_instead_of_dropping(tiny_tokenizer):
+    # Unlike InstructionDataset, over-long examples are truncated, not
+    # skipped — the dataset should still have every record, just shortened.
+    long_text = "hello world this is a test sentence."  # 24 tokens, measured
+    ds = ClassificationDataset(
+        [{"text": long_text, "label": "en"}], tiny_tokenizer, block_size=8, label_list=["en", "km"]
+    )
+    assert len(ds) == 1  # kept, not dropped
+    input_ids, _ = ds[0]
+    assert input_ids.shape == (8,)
+
+
+def test_classification_dataset_rejects_unrecognized_label(tiny_tokenizer):
+    records = [{"text": "hello world this is a test sentence.", "label": "fr"}]
+    with pytest.raises(ValueError, match="Unrecognized label"):
+        ClassificationDataset(records, tiny_tokenizer, block_size=32, label_list=["en", "km"])
+
+
+def test_classification_dataset_rejects_fewer_than_two_labels(tiny_tokenizer):
+    with pytest.raises(ValueError):
+        ClassificationDataset(
+            _classification_records(2, labels=("en",)),
+            tiny_tokenizer,
+            block_size=32,
+            label_list=["en"],
+        )
+
+
+def test_classification_dataset_rejects_non_positive_block_size(tiny_tokenizer):
+    with pytest.raises(ValueError):
+        ClassificationDataset(
+            _classification_records(1), tiny_tokenizer, block_size=0, label_list=["en", "km"]
+        )
+
+
+def test_classification_dataset_rejects_empty_records(tiny_tokenizer):
+    with pytest.raises(ValueError):
+        ClassificationDataset([], tiny_tokenizer, block_size=32, label_list=["en", "km"])
+
+
+def test_classification_dataset_works_with_dataloader(tiny_tokenizer):
+    ds = ClassificationDataset(
+        _classification_records(4), tiny_tokenizer, block_size=32, label_list=["en", "km"]
+    )
+    loader = DataLoader(ds, batch_size=2)
+    batch = next(iter(loader))
+    assert isinstance(batch, list)
+    assert len(batch) == 2
+    assert batch[0].shape == (2, 32)  # input_ids
+    assert batch[1].shape == (2,)  # labels

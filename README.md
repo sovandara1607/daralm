@@ -403,6 +403,8 @@ A few things worth calling out:
 - **A real, disclosed tokenizer limitation surfaced during evaluation**: the Phase 2 tokenizer was trained only on Wikipedia article text, which has essentially no `<`/`>` characters, so the chat template's plain-text markers (`<user>`, `<assistant>`, etc.) partially decode through the `<unk>` placeholder glyph `⁇` instead of showing literal angle brackets. The underlying token IDs stay internally consistent and learnable — this is a display/readability issue, not silent training corruption — but it wasn't anticipated when the plain-text-marker design decision was made in Phase 9's early planning, and is disclosed rather than quietly patched. Full detail and a real side-by-side Base-vs-Instruct generation comparison (including the honest read that Instruct's outputs are often near-empty, not yet coherent) is in **`MODEL_CARD_INSTRUCT.md`**.
 - **`MODEL_CARD_INSTRUCT.md` is hand-authored, not auto-generated** — unlike `MODEL_CARD.md`, `scripts/evaluate.py`'s pipeline is built around base-pretraining metrics (packed-token perplexity, memorization vs. raw training documents) and doesn't yet understand `InstructionDataset`'s loss-masked batches. Every number in it is still real, pulled directly from `checkpoints/daralm-50m-instruct/history.json`/`best/meta.json` and `data/raw/MANIFEST_instructions.json` — extending `evaluate.py` for SFT-style evaluation is tracked as future work, not done here.
 
+> **This section is a historical record of the original Phase 9 run.** Both models were substantially retrained afterward — see "Improving the models" below for the real follow-up story (a dead-end attempt, a correct diagnosis, and what actually worked).
+
 ## Phase 10: the inference API
 
 Spec section 26: a FastAPI service around the generation/tokenizer library code every earlier phase already built and tested — `Client → FastAPI → Model Service → Tokenizer → DaraLM → Generation → Response`. No model logic lives in `api/`; `api/services/model_service.py` is a thin adapter over `daralm.inference.generator`/`daralm.tokenizer.tokenizer`, and the routes are thinner still.
@@ -477,6 +479,192 @@ healthy
 Rebuilt and re-verified end to end after both fixes — same real checkpoint, same curl commands, identical `generated_text` output, `docker inspect`'s healthcheck still reports `healthy`, and the full local test suite (215 tests) + `ruff check` still pass.
 
 **A real infrastructure lesson from building this**: the first build attempt failed mid-layer with host disk I/O errors — the machine's own disk was down to 143Mi free, which was enough to corrupt Docker Desktop's internal storage (its containerd content-store and buildkit metadata DB) badly enough that even `docker image prune`/`docker builder prune` failed rather than reclaiming space. The fix was removing Docker Desktop's 55GB VM disk file (`Docker.raw`) entirely and letting it rebuild fresh on relaunch — a full local Docker reset, not a targeted prune, and worth knowing before it happens again: keep meaningful headroom (multiple GB) free before running a build that pulls torch's CUDA wheels.
+
+## Improving the models (post-Phase-10)
+
+After Phase 10, the obvious next question was: can the actual models get better, not just the infrastructure around them? This section is a real research narrative — including a genuine dead end — not a straight line to success.
+
+**Attempt 1 — bigger/better instruction dataset.** The original Instruct model's SFT set was 324 examples, 92% English. Found a real public Khmer instruction dataset (`saillab/alpaca_khmer_taco`, ~50K rows, Alpaca translated via the TaCo method) and expanded to 923 examples (500 English + 400 real Khmer + 25 hand-authored), rebalancing Khmer from 7.7% to 46% of the data:
+
+```bash
+uv run python scripts/prepare_instruction_dataset.py --n-english 500 --n-khmer 400
+uv run python scripts/train_sft.py --config configs/50m-instruct.yaml --base-checkpoint checkpoints/daralm-50m/best --block-size 768
+```
+
+Result: val perplexity got **worse** (194.4 → 290.4), and generation was still short/degenerate — no visible improvement despite 3x the data. Two real technical findings came out of it regardless: the Khmer dataset's `input` field encodes "empty" as the literal string `"nan"` (a pandas/parquet artifact, not `None`), and `saillab/alpaca_khmer_taco`'s `output` field is a compound `"Instruction in English: ... Response in Khmer: ..."` string requiring real parsing (`daralm.data.loader.fetch_alpaca_khmer_sample`) — both handled correctly and verified against real streamed rows before being wired into the pipeline. But the core goal — visibly better Instruct output — didn't happen.
+
+**Diagnosis**: DaraLM-50M Base had only seen 300 pretraining steps (~4.9M tokens, val perplexity 573.6) — still very undertrained at the language-modeling level. SFT can nudge an already-capable base model toward following instructions; it can't manufacture fluency the base model never learned. More instruction data can't fix that ceiling.
+
+**Attempt 2 — longer base pretraining, then redo SFT.** Resumed DaraLM-50M Base from step 300 → 1500 (`configs/50m.yaml`, `--resume`):
+
+```bash
+uv run python scripts/train.py --config configs/50m.yaml --resume
+```
+
+```
+step=350  val_loss=6.2192  perplexity=502.3
+step=500  val_loss=5.8668  perplexity=353.1
+step=750  val_loss=5.5265  perplexity=251.3
+step=1000 val_loss=5.3517  perplexity=211.0
+step=1250 val_loss=5.2530  perplexity=191.1
+step=1500 val_loss=5.2041  perplexity=182.0
+```
+
+A real, expected wrinkle: resuming with a larger `max_steps` rebuilds the cosine LR schedule against the *new* total before restoring the step counter — so the learning rate visibly jumped back up (from ~10% of peak, fully decayed under the old 300-step schedule, to ~92% of peak under the new 1500-step one) right at the resume point. Not a bug; documented in `configs/50m.yaml`'s own comments so it isn't mistaken for one if seen again.
+
+Redid SFT on the *same* 923-example dataset from attempt 1, this time on top of the much-improved Base:
+
+```
+step=50  val_loss=4.9132 perplexity=136.1
+step=150 val_loss=4.7525 perplexity=115.9
+step=300 val_loss=4.7069 perplexity=110.7
+```
+
+**This worked.** Perplexity 110.7 — 43% lower than the best of the two earlier attempts (194.4). More importantly, real generation changed qualitatively, not just numerically:
+
+| Prompt | Old Instruct (either earlier attempt) | New Instruct (this checkpoint) |
+|---|---|---|
+| Capital of France | `The -thethecoral ⁇ /assistant>` | `The city of the Republic is now the highest of the world. The area of Australia also is an important part of the city, and it has has a result of...` |
+| Photosynthesis | *(empty)* | `In this way the problem of the lible vier to the end of the system, the goals in the decision, and the process of the project to the issue of the future.` |
+
+English generation from both Base and Instruct is now visibly longer and more grammatically coherent (real clause structure, capitalization, punctuation) — still confidently wrong and repetitive ("has has a result of a result of"), but categorically past the near-empty/marker-only failure mode. **Khmer generation in Instruct did not improve at the same rate** — it's still short and often collapses toward the closing marker almost immediately, despite Khmer now being 46% of the SFT data. This asymmetry is a real, unresolved, disclosed gap, not glossed over — see `MODEL_CARD_INSTRUCT.md`'s "Honest read" section for the full comparison table and discussion.
+
+**The takeaway, stated plainly**: attempt 1 (bigger instruction dataset) was a real, well-executed dead end on its own. Attempt 2 (longer base pretraining) was the actual fix. If you're improving a small from-scratch LLM's instruction-following and it's not working, the base model's own fluency is worth checking before assuming the instruction data is the problem.
+
+## Production architecture: `/v1/chat` (spec section 27)
+
+Spec section 26's original four endpoints didn't include a chat endpoint — `/v1/generate` is deliberately a raw-completion endpoint, no chat template applied. `/v1/chat` is the first piece of spec section 27's "future production architecture" direction: it wraps `daralm.inference.generator.generate_chat`, which applies the `<user>/<assistant>` chat template `InstructionDataset` trains on, and returns only the assistant's response — not the echoed prompt.
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/chat -H "Content-Type: application/json" \
+  -d '{"instruction": "What is the capital of France?", "max_new_tokens": 50, "temperature": 0.8}'
+# {"response": "The region of Epirus is XII, is a great part of the air and was...the population
+#  of the plant hasleft celebrated by the", "tokens_generated": 50, "model": "daralm-50m-instruct"}
+```
+
+Run against the real, currently-published Instruct checkpoint (`DARALM_CONFIG=configs/50m-instruct.yaml DARALM_CHECKPOINT=checkpoints/daralm-50m-instruct/best`), not simulated — output matches the fluent-but-wrong pattern documented above and in `MODEL_CARD_INSTRUCT.md`.
+
+A few things worth calling out:
+
+- **Which checkpoint serves `/v1/chat` is a deployer choice, not a restriction this code enforces.** Calling it against Base doesn't error — Base just runs whatever text it's given through the chat template — but the output won't look like a chat response, since Base was never trained on that template. No endpoint is hard-coded to one checkpoint type, consistent with `/v1/generate`'s existing design.
+- **`ModelService.chat()` doesn't need `generate()`'s prompt-length-subtraction trick.** `generate_chat()` already returns only the assistant's response text (the chat-template prompt is stripped internally before the function returns) — `tokens_generated` is a direct encode-and-count, simpler than `/v1/generate`'s re-tokenize-and-diff approach.
+- **Same fail-loudly validation as `/v1/generate`**: verified against a running server — empty `instruction` and a caller mistakenly sending `/v1/generate`'s `prompt` field instead of `instruction` both return a clear 422, not a silently-ignored or misinterpreted request.
+- **7 new tests** (`tests/test_api.py`), same tiny-fixture pattern as the rest of the API suite — 222 tests total, still passing, still never touching a real checkpoint.
+
+## Observability: `/metrics` + request logging
+
+The next piece of spec section 27 — not a Prometheus/Grafana deployment (spec section 30 explicitly warns against adding infrastructure before it's needed), just the standard first layer any of that would need anyway: a `/metrics` endpoint in Prometheus's own text exposition format (via the standard `prometheus_client` library, not hand-rolled), plus a request-logging middleware.
+
+```bash
+curl http://127.0.0.1:8000/metrics
+# daralm_requests_total{method="GET",path="/v1/model",status_code="200"} 1.0
+# daralm_request_duration_seconds_bucket{le="0.005",method="GET",path="/v1/model"} 1.0
+# daralm_tokens_generated_total{endpoint="generate"} 30.0
+```
+
+- **`api/observability.py`** owns both the `ObservabilityMiddleware` (logs every request via the same `daralm.utils.logging.get_logger` pattern as the rest of the project, and records it into `daralm_requests_total`/`daralm_request_duration_seconds`) and `record_tokens_generated()`, called from `/v1/generate` and `/v1/chat` after each successful call.
+- **Kept out of `ModelService`, on purpose.** Token-count recording lives in the routes, not the service layer — `ModelService` stays HTTP/metrics-agnostic, the same separation-of-concerns reasoning that put `run_in_threadpool` in the service layer but validation in the schemas.
+- **`/metrics` has no model dependency**, deliberately — reachable even during the few-second startup window while the model is still loading, so a scraper can tell the process is alive before `/health` would return 200.
+- Verified end to end against a real running server: real request counts and histogram buckets appear correctly labeled by method/path, and `daralm_tokens_generated_total{endpoint="generate"}` increments after a real `/v1/generate` call — not just that the endpoint returns 200.
+
+## A frontend: `GET /`
+
+A single self-contained `web/index.html` (inline CSS/JS, no build step, no Node.js toolchain) rather than the spec's eventual Next.js UI — it talks to the same-origin `/v1/chat`, `/v1/generate`, `/v1/tokenize` endpoints via `fetch`, needs no separate dev/build/deploy pipeline, and ships in the same Docker image as the API with one extra `COPY` line. Visit `http://127.0.0.1:8000/` for three tabs (Chat, Generate, Tokenize) with sampling-parameter sliders and a model-info bar reading live from `/v1/model`.
+
+Browser automation wasn't available to click through it live in this session, so verification instead confirmed every JS↔API contract directly against a real running server: each form's exact request payload and the real response's field names (`response`/`generated_text`/`tokens`, `tokens_generated`, `model`, `token_count`) were checked to match what the page's JS reads, including the 422 error shape (`detail: [{loc, msg}, ...]`) the error-rendering code parses. Not the same as a real click-through, and disclosed as such rather than claimed as more than it is.
+
+## DaraLM-150M: the scale-up experiment, honestly reported
+
+After DaraLM-50M-Instruct still hallucinated on basic questions even after a real, verified improvement, the next question was: does scaling up — a bigger corpus *and* a bigger model — actually fix it? Real experiment, real result, and the result is more humbling than a straightforward win.
+
+**Corpus expansion**: re-fetched Wikipedia at 8,000 docs/language (up from 1,500) — 15,939 unique documents after cleaning/dedup (up from 2,990), ~29M tokens at this tokenizer's real compression rate (up from ~8.25M).
+
+**Architecture**: `configs/150m.yaml` — hidden_size=896, 14 layers, 14 heads, same 16K vocab/1024 context as every other size. `scripts/inspect_model_config.py` confirmed 149.2M real parameters before any training started.
+
+```bash
+uv run python scripts/prepare_dataset.py --languages km en --docs-per-language 8000
+uv run python scripts/train.py --config configs/150m.yaml
+```
+
+**A real infrastructure lesson, corrected in real time**: an isolated MPS throughput benchmark measured **42.5s/step** for this model — ~50-60x slower than 50M, which would have meant a ~3.5 hour run. That number was reported to the user as fact. It was wrong. The actual training run, started moments later, ran at a steady **~1.1-1.2s/step** — the isolated benchmark had been contaminated by leftover zombie processes from hours earlier in the session competing for MPS resources, a confound that wasn't caught before reporting the bad number. The correction was issued as soon as the real run's speed became clear, not quietly folded in afterward. **A second, real cost was still there and worth knowing**: validation passes took **~4.3 minutes each** (the val set grew 3x along with the corpus), and with `eval_interval=25` firing 12 times across 300 steps, validation dominated total wall-clock time — real total run time was ~53 minutes, not the initially-corrected "~6 minutes" either. Two real numbers, two corrections, both disclosed as they were found rather than smoothed into one clean estimate after the fact.
+
+**The honest result**:
+
+```
+step=25  perplexity=3338.8
+step=100 perplexity=1750.6
+step=200 perplexity=1278.2
+step=300 perplexity=1131.5   (final)
+```
+
+Steady improvement, no overfitting signal — but the number that actually matters is the comparison, not the trend: **DaraLM-50M's own perplexity at step 300 was 573.6** — roughly *half* of 150M's step-300 perplexity. The bigger model is currently *behind* the smaller one at the same step count. Two compounding reasons, both real: 150M's MPS-forced `batch_size=2` (vs. 50M's `batch_size=4`) meant it processed only 614,400 tokens by step 300, against 50M's 4,915,200 — an 8x gap in raw data seen: and independent of that, larger models are known to converge more slowly in absolute loss early in training (more parameters to fit) before eventually overtaking smaller ones — a crossover point 300 steps didn't reach. Restated in the same terms as the "Training Tokens" section above: 150M has seen only **~2% of the corpus** so far; 50M's own 1500-step run has seen **~85%**, still under one full pass.
+
+Real generation confirms the numbers, not just an abstract score:
+
+| Prompt | daralm-50m (step 1500) | daralm-150m (step 300) |
+|---|---|---|
+| "What is the capital of France?" | `...The highest major major cities are: The New York Times...` | `...In a a in the country, and are a late's. The in the part...` |
+| "Describe photosynthesis in one sentence." | `...The first time had an important number of...` | `...In the --tt, and the a late of the most not in the same...` |
+
+150M's output is measurably *less* coherent right now — more fragments, more stray punctuation, less real sentence structure.
+
+**The takeaway, stated as plainly as the 50M lesson that led here**: doubling down on scale (bigger corpus + bigger model at once) doesn't pay off automatically — it pays off once training runs long enough to reach the point where the larger model's extra capacity starts being used productively instead of just being slower to fit. 300 steps was enough to *see* that 150M is a fundamentally different, more expensive training problem than 50M was; it wasn't enough to *cross* the point where being bigger actually helps. The honest next step (not yet done) would be extending 150M's own training the same way 50M's was extended earlier — continuing from this checkpoint, not starting over.
+
+**A real, unrelated bug found and fixed along the way**: `scripts/generate_model_card.py` had two hard-coded strings — `"~8.25M tokens"` and `"~3,000 Wikipedia documents"` — left over from before the corpus was expanded. Every model card generated after the corpus grew (including 50M's own, regenerated multiple times this session) was silently repeating the stale, wrong corpus size. Fixed by having the script actually tokenize the real cleaned corpus (`count_corpus_tokens`, a few real seconds of work, not a guess) and read the real document count from `data/cleaned/stats.json` instead of a string written once and never revisited. Caught while writing this section, not by a dedicated audit — a reminder that generated documentation needs the same "don't guess when it can be computed" discipline as the code it describes.
+
+Full model card: `MODEL_CARD_150M.md`. A broader roadmap for where DaraLM could go next (translation, classification, embeddings, and more, evaluated for real feasibility rather than assumed) is in `ROADMAP_NLP_PLATFORM.md`.
+
+## NLP platform roadmap, Stage 1: normalization + classification
+
+`ROADMAP_NLP_PLATFORM.md` reordered the original 20-phase request into risk-ranked stages. Stage 1 — "near-zero-risk foundation" — is now done, both parts real and measured.
+
+**Khmer text normalization** (`daralm/data/khmer_normalize.py`): most of the wishlist (Unicode NFC, zero-width characters, duplicated-character collapsing) turned out to already exist in `daralm/data/cleaner.py`'s `clean_text()` from Phase 1, so this only built what was genuinely missing — Khmer digit (០-៩) ↔ Arabic digit conversion, and removal of a spurious space before Khmer sentence punctuation (`។៕៖៚៘`), measured on the real corpus at **28.5% of `។` occurrences** having a stray preceding space. Exposed with no model dependency at `POST /v1/normalize` — it works even before a checkpoint finishes loading, unlike every other route.
+
+**Classification** (`daralm/model/classification_head.py`, `scripts/train_classifier.py`): a linear probe — a small `ClassificationHead` trained on top of a **frozen** DaraLM-50M backbone, per `ROADMAP_NLP_PLATFORM.md` Phase 3's own model-family design ("lightweight heads for classification-family tasks... cheapest to train, cheapest to store, cheapest to serve"). Pooling is last-real-token, not mean — the right choice for a causal decoder, where only the final real position has attended to the whole input.
+
+First task: language detection (en/km), using the `language` field the corpus already carries from Phase 1's cleaning step — free labels, no new data sourcing needed.
+
+```bash
+uv run python scripts/train_classifier.py \
+  --backbone-config configs/50m.yaml \
+  --backbone-checkpoint checkpoints/daralm-50m/best
+```
+
+```
+epoch=1 val_loss=0.0829 val_accuracy=0.9786
+epoch=2 val_loss=0.0710 val_accuracy=0.9837
+epoch=3 val_loss=0.0658 val_accuracy=0.9837   (best)
+```
+
+**Read this result honestly**: 98.37% is expected, not impressive — Khmer and English occupy disjoint Unicode ranges, so this task is close to solvable by a character-range heuristic alone (in fact `daralm/data/cleaner.py`'s `detect_language()` already does exactly that, with no model at all). What this run actually validates is the *mechanism* — `return_hidden_states`, the pooling math, the frozen-backbone training loop, checkpointing — working correctly end to end on real data, not a claim that DaraLM has learned anything semantically deep. The real test of that would be sentiment, topic, or intent classification, none of which have labeled Khmer data sourced yet (`ROADMAP_NLP_PLATFORM.md`'s own dataset table flags this as the next concrete gap).
+
+Head checkpoint: `checkpoints/daralm-50m-classify-language/best.pt` (head weights + label list only, ~6KB — the frozen 33.4M-parameter backbone isn't duplicated per task).
+
+## NLP platform roadmap, Stage 2 item 3: grammar correction — a real bug, then a real (nuanced) result
+
+Stage 2's first item, grammar/spelling correction, was chosen specifically because it needed no external data — synthetic typos (`daralm/data/corrupt.py`: delete/duplicate/swap/substitute) generated from the existing corpus's own sentences (`scripts/prepare_grammar_dataset.py`), reusing `InstructionDataset`/`scripts/train_sft.py` unchanged. 3000/450/450 train/val/test examples, SFT'd from DaraLM-50M Base for 400 steps (`configs/50m-grammar.yaml`).
+
+**Training loss looked fine**: perplexity went 60.5 → 49.7 over 400 steps, steady, no overfitting signal — the same shape every other successful fine-tune in this project has shown.
+
+**The first real generation-based evaluation looked like total failure.** `scripts/evaluate_grammar.py` runs real inference (`generate_chat`, not a proxy metric) and scores it with character/word error rate (CER/WER) against the known-correct reference, alongside a no-op baseline (CER/WER of the *uncorrected* corrupted input). The first run: Model CER 1.06–1.25 vs. a 0.028 no-op baseline, 0/200 exact matches — worse than doing nothing.
+
+**A diagnostic overfit test (`scripts/overfit_test_grammar.py`, same "can it even memorize a tiny fixed set" gate as Phase 5) found the real cause was a bug, not a capacity ceiling.** `generate_chat`'s stop condition compared decoded text against the literal string `"</assistant>"` — but this tokenizer has essentially no coverage of `<`/`>` characters (already documented as a limitation elsewhere in this project), so `<` round-trips through encode→decode as `<unk>`'s placeholder glyph, never the literal character. The stop condition silently never fired: generation ran to `max_new_tokens` even after the model had already produced a correct answer, appending garbage after it. **Fixed** in `daralm/inference/generator.py` — compare against the marker's own actual decoded form, computed from the same tokenizer doing the generating, not its literal source text.
+
+**With the fix, the memorization diagnostic passed clearly**: 13/16 exact matches on the tiny fixed set, average CER 0.051 (down from 0.216 pre-fix) — proof the SFT recipe genuinely *can* learn this task's input→output mapping when given enough targeted signal. (The diagnostic script's own automated verdict still printed "FAIL" — its pass threshold required beating an already-near-zero baseline CER by 2x, miscalibrated for a set where the baseline itself is nearly 0. A real result contradicting my own overly strict threshold, reported as found, not smoothed over.)
+
+**But re-running the real held-out evaluation with the same fix confirmed the original finding stands** — this wasn't all one bug:
+
+```
+Model CER:    1.23   (no-op baseline: 0.028)
+Model WER:    1.42   (no-op baseline: 0.14)
+Exact match:  0/200
+```
+
+**The honest, corrected picture**: the model can learn to reproduce sentences it was trained on (memorization: strong), but does not generalize the correction skill to new, unseen corrupted sentences (held-out: still worse than a no-op). This reframes the original conclusion — it's *not* that SFT-for-generation is fundamentally broken on this architecture (the memorization test disproves that); it's that 400 steps on 3000 examples, at 33M parameters, wasn't enough to learn a *generalizable* rule, only to memorize specific examples. That's a real, different, more actionable finding than "generation is broken" — more data and/or more steps is a reasonable next bet, not a dead end, though it isn't guaranteed to close the gap either.
+
+**A separate, valuable side effect**: the `generate_chat` fix applies to every chat-based capability in this project, not just grammar correction — any prior evaluation relying on `</assistant>`-based stopping was silently running longer than intended. Regression-tested in `tests/test_generation.py`.
+
+Not fixed silently, not hidden — the bug, the fix, and the corrected (still real) held-out result are all documented here, same discipline as every other finding in this project. `ROADMAP_NLP_PLATFORM.md` is updated to reflect the corrected picture.
 
 ## Running tests
 

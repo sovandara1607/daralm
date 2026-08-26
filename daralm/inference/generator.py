@@ -104,16 +104,37 @@ def generate_chat(
     `daralm.data.chat_template`'s module docstring for why), the model has
     no guaranteed stopping signal beyond `<eos>` itself, which a lightly
     fine-tuned model may not reliably emit right after `</assistant>`. This
-    loop stops as soon as the literal `</assistant>` marker text appears in
-    the decoded output, in addition to stopping on `<eos>` — belt and
-    suspenders, not a replacement for actually training the model to emit
-    `<eos>` reliably.
+    loop stops as soon as the marker text appears in the decoded output, in
+    addition to stopping on `<eos>` — belt and suspenders, not a
+    replacement for actually training the model to emit `<eos>` reliably.
+
+    A real bug lived here until it was caught by a grammar-correction
+    overfit diagnostic: the stop check compared against the literal string
+    `"</assistant>"`, but this tokenizer has essentially no coverage of
+    `<`/`>` characters (a known, disclosed gap — see
+    `ROADMAP_NLP_PLATFORM.md` Phase 1), so `<` in the marker round-trips
+    through `encode`+`decode` as `<unk>`'s placeholder glyph, not `<`
+    itself — `tokenizer.decode(tokenizer.encode("</assistant>"))` produces
+    `" ⁇ /assistant>"`, never the literal string this used to check for.
+    The stop condition silently never fired: generation ran to
+    `max_new_tokens` even when the model had already produced a correct
+    response immediately followed by its (undetectable) attempt at the
+    closing marker. Fixed by checking against the marker's own actual
+    decoded form instead of its literal source text — computed once,
+    up front, from the same tokenizer doing the generating, so it stays
+    correct regardless of that tokenizer's specific `<unk>` behavior.
     """
     device = next(model.parameters()).device
     prompt = format_prompt(instruction)
     prompt_ids = tokenizer.encode(prompt, add_bos=True, add_eos=False)
     generated_ids = list(prompt_ids)
     num_prompt_tokens = len(prompt_ids)
+
+    # The marker as it will *actually* come back out of `decode`, not as it
+    # went into `encode` — see the docstring above for why those differ.
+    decoded_assistant_close = tokenizer.decode(
+        tokenizer.encode(ASSISTANT_CLOSE, add_bos=False, add_eos=False)
+    )
 
     for _ in range(max_new_tokens):
         context = generated_ids[-model.config.max_position_embeddings :]
@@ -136,9 +157,9 @@ def generate_chat(
             break
 
         response_so_far = tokenizer.decode(generated_ids[num_prompt_tokens:])
-        if ASSISTANT_CLOSE in response_so_far:
+        if decoded_assistant_close in response_so_far:
             break
 
     response_text = tokenizer.decode(generated_ids[num_prompt_tokens:])
-    response_text = response_text.split(ASSISTANT_CLOSE)[0]
+    response_text = response_text.split(decoded_assistant_close)[0]
     return response_text.strip()

@@ -46,7 +46,24 @@ training:
   # reasoning and how max_steps was chosen to fit a real session).
   batch_size: 4
   gradient_accumulation_steps: 4
-  max_steps: 300
+  # max_steps raised 300 -> 1500 (5x) after the Phase 9 SFT follow-up work
+  # found this checkpoint's own undertraining — not the instruction
+  # dataset — was the real ceiling on Instruct's generation quality (base
+  # val perplexity 573.6 at step 300 is very high; SFT can't manufacture
+  # fluency a base model never learned). Resumed via `--resume`, not
+  # restarted, so this continues from the real step-300 weights.
+  #
+  # Resuming with a larger max_steps rebuilds the cosine LR schedule
+  # against the new total (1500, not 300) before restoring the optimizer/
+  # scheduler step counter to 300 — so the learning rate jumps back up
+  # from wherever it had decayed to under the old 300-step schedule
+  # (~10% of peak, per min_lr_ratio) to ~92% of peak, then decays smoothly
+  # to 10% again by the new step 1500. This is the standard "continue
+  # pretraining longer" pattern, not a bug — but it does mean a visible LR
+  # (and likely a small transient loss) discontinuity right at step 300,
+  # worth expecting rather than mistaking for a problem when it shows up
+  # in the training log.
+  max_steps: 1500
   warmup_steps: 20
   eval_interval: 50
   save_interval: 150

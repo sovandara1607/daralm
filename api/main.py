@@ -1,4 +1,9 @@
-"""FastAPI app entry point — spec section 26.
+"""FastAPI app entry point — spec section 26, plus the section 27
+"production architecture" pieces built on top: `/v1/chat`, `/metrics`
+(request counts/latency/tokens via `api.observability`, Prometheus text
+format), structured request logging (same middleware), and `GET /`
+serving a static frontend (`web/index.html`) so the API has something to
+actually click through instead of only curl.
 
 Run it:
 
@@ -14,17 +19,19 @@ that works out of the box against this project's own trained checkpoints:
     DARALM_TOKENIZER   the trained tokenizer .model    (default:
                        checkpoints/tokenizer/unigram.model)
 
-Defaults point at DaraLM-50M **Base**, not Instruct: `/v1/generate` is a
-raw-completion endpoint (no chat template applied — spec section 26 lists
-exactly `/health`, `/v1/model`, `/v1/tokenize`, `/v1/generate`, nothing
-chat-specific), which is what Base was trained for. To serve Instruct
-instead, point the three env vars at `configs/50m-instruct.yaml` /
-`checkpoints/daralm-50m-instruct/best` — `/v1/generate` will still work
-(the underlying `generate()` call doesn't care which checkpoint it's
-given), it just won't wrap the prompt in the `<user>/<assistant>` chat
-template the way `daralm.inference.generator.generate_chat` does; that
-wiring is future work, not built in this phase, to avoid an unlisted
-endpoint the spec didn't ask for.
+Defaults point at DaraLM-50M **Base**, not Instruct — `/v1/generate` is a
+raw-completion endpoint (spec section 26's exact example), which is what
+Base was trained for. `/v1/chat` (spec section 27's "production
+architecture" direction, not one of section 26's original four) wraps
+`daralm.inference.generator.generate_chat`, applying the
+`<user>/<assistant>` chat template `InstructionDataset` trains on — it's
+only meaningful against an instruction-tuned checkpoint. Point the three
+env vars at `configs/50m-instruct.yaml` / `checkpoints/daralm-50m-instruct/best`
+to serve Instruct instead. Calling `/v1/chat` against Base doesn't error
+(the model just runs whatever text it's given), but the output won't
+look like a chat response — Base was never trained on the chat template.
+This is a deployer choice, not something this file decides for you: no
+endpoint is restricted to one checkpoint type.
 """
 
 from __future__ import annotations
@@ -34,7 +41,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from api.routes import generate, health, model, tokenize
+from api.observability import ObservabilityMiddleware
+from api.routes import chat, frontend, generate, health, metrics, model, normalize, tokenize
 from api.services.model_service import ModelService
 from daralm.utils.logging import get_logger
 
@@ -80,7 +88,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(ObservabilityMiddleware)
+
 app.include_router(health.router)
 app.include_router(model.router)
+app.include_router(normalize.router)
 app.include_router(tokenize.router)
 app.include_router(generate.router)
+app.include_router(chat.router)
+app.include_router(metrics.router)
+app.include_router(frontend.router)

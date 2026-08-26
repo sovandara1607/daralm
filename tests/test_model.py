@@ -65,6 +65,41 @@ def test_forward_pass_output_shape():
     assert output.loss is None
 
 
+def test_hidden_states_are_none_by_default():
+    # return_hidden_states defaults to False — every existing call site
+    # (causal-LM training, generate()) is unaffected by this being added.
+    config = _tiny_architecture()
+    model = DaraLMTransformer(config)
+    input_ids = torch.randint(0, config.vocab_size, (2, 10))
+    output = model(input_ids)
+    assert output.hidden_states is None
+
+
+def test_hidden_states_returned_with_correct_shape_when_requested():
+    config = _tiny_architecture()
+    model = DaraLMTransformer(config)
+    input_ids = torch.randint(0, config.vocab_size, (2, 10))
+    output = model(input_ids, return_hidden_states=True)
+    assert output.hidden_states.shape == (2, 10, config.hidden_size)
+    # Still returns logits/loss as normal — additive, not a replacement.
+    assert output.logits.shape == (2, 10, config.vocab_size)
+
+
+def test_hidden_states_are_post_final_norm_pre_lm_head():
+    # The returned hidden_states must be exactly what lm_head was applied
+    # to, not some other intermediate tensor — verified by re-running
+    # lm_head on the returned hidden_states and checking it reproduces
+    # the real logits exactly.
+    config = _tiny_architecture()
+    model = DaraLMTransformer(config)
+    model.eval()
+    input_ids = torch.randint(0, config.vocab_size, (2, 10))
+    with torch.no_grad():
+        output = model(input_ids, return_hidden_states=True)
+        recomputed_logits = model.lm_head(output.hidden_states)
+    assert torch.allclose(recomputed_logits, output.logits)
+
+
 @pytest.mark.parametrize("batch_size", [1, 2, 8])
 def test_various_batch_sizes(batch_size):
     config = _tiny_architecture()

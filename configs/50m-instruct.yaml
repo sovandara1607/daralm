@@ -33,20 +33,25 @@ training:
   weight_decay: 0.1
   gradient_clip: 1.0
   # batch_size=4 reuses the exact shape Phase 6-7 proved safe on this
-  # hardware's MPS backend (severe throughput cliff above it at
-  # seq_len=1024 for this same architecture). Instruction examples are
-  # padded to block_size=512 (see scripts/train_sft.py), not 1024, but
-  # there's no upside to re-exploring the cliff boundary for a dataset
-  # this small — batch_size=4 comfortably finishes an epoch in seconds
-  # either way.
+  # hardware's MPS backend. Instruction examples are padded to
+  # block_size=768 (see scripts/train_sft.py) as of the dataset expansion
+  # below — re-measured (not assumed) safe at this shape too, and it's a
+  # DIFFERENT failure mode than the earlier throughput cliffs, not just a
+  # repeat: batch=4 -> 0.510s/step, batch=8 -> 1.379s/step (a real but mild
+  # ~2.7x slowdown for 2x the data, not a cliff), batch=16 -> crashed
+  # outright with "MPS backend out of memory" (17.54 GiB allocated) rather
+  # than merely running slow. batch_size=4 stays the safety-margined choice.
   batch_size: 4
   gradient_accumulation_steps: 4
-  # ~275 train examples / effective batch 16 = ~17 steps/epoch.
-  # 100 steps ~= 6 epochs — enough for the model to actually shift toward
-  # the chat template's structure without wildly overfitting the small set.
-  max_steps: 100
-  warmup_steps: 10
-  eval_interval: 20
-  save_interval: 50
-  log_interval: 5
+  # Dataset expanded from 275 to 784 train examples after finding a real
+  # Khmer instruction dataset (saillab/alpaca_khmer_taco) instead of
+  # relying on 25 hand-authored examples alone (see
+  # scripts/prepare_instruction_dataset.py). 784 / effective batch 16 =
+  # 49 steps/epoch; 300 steps ~= 6 epochs, matching the same epoch count
+  # the original 100-step run used on the smaller dataset, scaled up.
+  max_steps: 300
+  warmup_steps: 30
+  eval_interval: 50
+  save_interval: 100
+  log_interval: 10
   seed: 42

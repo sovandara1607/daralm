@@ -247,3 +247,80 @@ class InstructionDataset(Dataset):
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         return self._input_ids[index], self._labels[index]
+
+
+class ClassificationDataset(Dataset):
+    """Tokenized `{"text", "label"}` pairs for training a
+    `daralm.model.classification_head.ClassificationHead` on top of a
+    `DaraLMTransformer` backbone — the roadmap's first classification-family
+    capability (`ROADMAP_NLP_PLATFORM.md`).
+
+    Two real differences from `InstructionDataset`, both deliberate:
+
+    1. **Truncated, not skipped, when longer than `block_size`.** SFT
+       drops over-long examples because truncating could cut a response
+       before its `<eos>` — actively corrupting what the model is taught
+       to generate. Classification has no such risk: using only the first
+       `block_size` tokens of a long document still gives the classifier
+       real signal to pool from (the last-real-token pooling strategy in
+       `ClassificationHead` just pools from wherever the truncated
+       sequence ends instead of the true document end) — the standard
+       practice for text classifiers, not a shortcut specific to this
+       project.
+    2. **Explicit `label2id`, built from `label_list`, not discovered from
+       the data.** An unrecognized label raises immediately (`ValueError`)
+       rather than silently becoming a new, unplanned class — the same
+       "fail loudly on a typo" discipline `ModelConfig`'s `extra="forbid"`
+       already applies to configs, applied here to label spelling.
+    """
+
+    def __init__(
+        self,
+        records: list[dict[str, Any]],
+        tokenizer: DaraLMTokenizer,
+        block_size: int,
+        label_list: list[str],
+    ) -> None:
+        if block_size <= 0:
+            raise ValueError(f"block_size must be positive, got {block_size}")
+        if len(label_list) < 2:
+            raise ValueError(f"label_list must have at least 2 classes, got {label_list}")
+
+        self.label_list = list(label_list)
+        self.label2id = {label: idx for idx, label in enumerate(self.label_list)}
+
+        pad_id = tokenizer.pad_id
+        self._input_ids: list[torch.Tensor] = []
+        self._label_ids: list[int] = []
+        truncated_count = 0
+
+        for record in records:
+            label = record["label"]
+            if label not in self.label2id:
+                raise ValueError(
+                    f"Unrecognized label {label!r} — not in label_list {self.label_list}. "
+                    "Every record's label must be one of the configured classes."
+                )
+
+            ids = tokenizer.encode(record["text"], add_bos=True, add_eos=True)
+            if len(ids) > block_size:
+                ids = ids[:block_size]
+                truncated_count += 1
+            else:
+                ids = ids + [pad_id] * (block_size - len(ids))
+
+            self._input_ids.append(torch.tensor(ids, dtype=torch.long))
+            self._label_ids.append(self.label2id[label])
+
+        if truncated_count:
+            logger.warning(
+                "Truncated %d example(s) exceeding block_size (%d)", truncated_count, block_size
+            )
+        if not self._input_ids:
+            raise ValueError("No records provided — cannot build an empty ClassificationDataset.")
+
+    def __len__(self) -> int:
+        return len(self._input_ids)
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return self._input_ids[index], torch.tensor(self._label_ids[index], dtype=torch.long)

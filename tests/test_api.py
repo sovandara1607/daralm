@@ -134,6 +134,66 @@ def test_tokenize_rejects_unknown_fields(client):
     assert response.status_code == 422
 
 
+# --- POST /v1/normalize -------------------------------------------------------
+
+
+def test_normalize_removes_space_before_khmer_punctuation(client):
+    response = client.post("/v1/normalize", json={"text": "ប្រទេសកម្ពុជា ។"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["normalized_text"] == "ប្រទេសកម្ពុជា។"
+    assert body["changed"] is True
+
+
+def test_normalize_reports_unchanged_when_already_normalized(client):
+    response = client.post("/v1/normalize", json={"text": "hello world"})
+    body = response.json()
+    assert body["normalized_text"] == "hello world"
+    assert body["changed"] is False
+
+
+def test_normalize_arabic_digits_mode(client):
+    response = client.post(
+        "/v1/normalize", json={"text": "ឆ្នាំ២០២៤", "digits": "arabic"}
+    )
+    body = response.json()
+    assert "2024" in body["normalized_text"]
+
+
+def test_normalize_rejects_invalid_digits_option(client):
+    response = client.post("/v1/normalize", json={"text": "hi", "digits": "latin"})
+    assert response.status_code == 422
+
+
+def test_normalize_rejects_unknown_fields(client):
+    response = client.post("/v1/normalize", json={"text": "hi", "typo_field": True})
+    assert response.status_code == 422
+
+
+def test_normalize_works_without_a_loaded_model():
+    # /v1/normalize has no model dependency at all (see api/routes/normalize.py's
+    # module docstring) — verified by mounting just this router on a fresh
+    # FastAPI app with no lifespan and no model_service configured.
+    # Deliberately NOT using the real `api.main.app` here — that app's
+    # lifespan loads a real checkpoint on first request even without a
+    # `with` block (see the 503-before-startup test above), which would
+    # make this test slow and would test the wrong thing (a real model
+    # happening to be available on disk, not this route's actual
+    # independence from one).
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from api.routes import normalize as normalize_route
+
+    isolated_app = FastAPI()
+    isolated_app.include_router(normalize_route.router)
+    isolated_client = TestClient(isolated_app)
+
+    response = isolated_client.post("/v1/normalize", json={"text": "hello ។"})
+    assert response.status_code == 200
+    assert response.json()["normalized_text"] == "hello។"
+
+
 # --- POST /v1/generate --------------------------------------------------------
 
 
@@ -171,6 +231,95 @@ def test_generate_uses_default_sampling_params_when_omitted(client):
     # entirely — confirm those still work via their Field defaults.
     response = client.post("/v1/generate", json={"prompt": "hello world"})
     assert response.status_code == 200
+
+
+# --- POST /v1/chat -----------------------------------------------------------
+
+
+def test_chat_returns_the_spec_shaped_response(client):
+    response = client.post(
+        "/v1/chat",
+        json={"instruction": "hello", "max_new_tokens": 10, "temperature": 0.8},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body["response"], str)
+    assert isinstance(body["tokens_generated"], int)
+    assert body["tokens_generated"] >= 0
+    assert body["model"] == "daralm-api-test"
+
+
+def test_chat_response_never_contains_the_assistant_close_marker(client):
+    # Same guarantee generate_chat() itself provides (see test_generation.py)
+    # — the API must not leak the raw </assistant> marker into the response.
+    from daralm.data.chat_template import ASSISTANT_CLOSE
+
+    response = client.post("/v1/chat", json={"instruction": "hello world", "max_new_tokens": 30})
+    assert ASSISTANT_CLOSE not in response.json()["response"]
+
+
+def test_chat_rejects_empty_instruction(client):
+    response = client.post("/v1/chat", json={"instruction": ""})
+    assert response.status_code == 422
+
+
+def test_chat_rejects_invalid_temperature(client):
+    response = client.post("/v1/chat", json={"instruction": "hi", "temperature": -1.0})
+    assert response.status_code == 422
+
+
+def test_chat_rejects_max_new_tokens_over_the_cap(client):
+    response = client.post("/v1/chat", json={"instruction": "hi", "max_new_tokens": 5000})
+    assert response.status_code == 422
+
+
+def test_chat_rejects_unknown_fields(client):
+    # extra="forbid" — e.g. a caller mistakenly sending /v1/generate's
+    # "prompt" field instead of "instruction" should 422, not be ignored.
+    response = client.post("/v1/chat", json={"prompt": "hi"})
+    assert response.status_code == 422
+
+
+def test_chat_uses_default_sampling_params_when_omitted(client):
+    response = client.post("/v1/chat", json={"instruction": "hello world"})
+    assert response.status_code == 200
+
+
+# --- GET /metrics --------------------------------------------------------------
+
+
+def test_metrics_returns_prometheus_text_format(client):
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+
+
+def test_metrics_reflects_a_real_request(client):
+    # Make a real request first so its counters exist, then confirm the
+    # exposition text actually contains them — not just that /metrics
+    # returns 200 with an empty body.
+    client.get("/v1/model")
+    response = client.get("/metrics")
+    body = response.text
+    assert "daralm_requests_total" in body
+    assert 'path="/v1/model"' in body
+
+
+def test_metrics_counts_tokens_generated(client):
+    client.post("/v1/generate", json={"prompt": "hi", "max_new_tokens": 5})
+    body = client.get("/metrics").text
+    assert "daralm_tokens_generated_total" in body
+    assert 'endpoint="generate"' in body
+
+
+# --- GET / (frontend) ------------------------------------------------------------
+
+
+def test_root_serves_the_frontend_html(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "DaraLM" in response.text
 
 
 # --- 503 before startup / without a loaded model ------------------------------

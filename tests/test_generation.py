@@ -225,22 +225,35 @@ def test_generate_chat_stops_when_assistant_close_is_generated(
     # through real token ids, so this test mocks decode() directly instead
     # — it's testing generate_chat's stop-on-marker loop logic, not the
     # tokenizer's fidelity for out-of-corpus characters.
+    #
+    # generate_chat compares against the marker's own *decoded* form, not
+    # its literal source text (see generate_chat's docstring for the real
+    # bug this fixed: encode->decode isn't lossless for "<"/">" on the real
+    # tokenizer, so the literal string never actually appeared in decoded
+    # output). This mock must inject that same decoded form, not the
+    # literal "</assistant>", to actually exercise the stop-on-marker path.
     import daralm.inference.generator as generator_module
     from daralm.data.chat_template import ASSISTANT_CLOSE
 
     monkeypatch.setattr(generator_module, "sample_next_token", lambda *a, **k: 0)
 
-    call_count = {"n": 0}
     real_decode = tiny_tokenizer.decode
+    decoded_marker = real_decode(
+        tiny_tokenizer.encode(ASSISTANT_CLOSE, add_bos=False, add_eos=False)
+    )
+
+    call_count = {"n": 0}
 
     def fake_decode(ids):
         call_count["n"] += 1
-        if call_count["n"] >= 3:
-            return f"a response {ASSISTANT_CLOSE}"
+        # +1 vs. the loop-only count: generate_chat's own precompute of
+        # decoded_marker is itself one decode() call, before the loop starts.
+        if call_count["n"] >= 4:
+            return f"a response {decoded_marker}"
         return real_decode(ids)
 
     monkeypatch.setattr(tiny_tokenizer, "decode", fake_decode)
 
     text = generate_chat(tiny_model, tiny_tokenizer, instruction="hello", max_new_tokens=100)
     assert call_count["n"] < 100  # stopped well before exhausting max_new_tokens
-    assert ASSISTANT_CLOSE not in text
+    assert decoded_marker not in text

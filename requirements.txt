@@ -133,6 +133,8 @@ pandas==3.0.5 ; python_full_version >= '3.11'
     # via datasets
 pluggy==1.6.0
     # via pytest
+prometheus-client==0.26.0
+    # via daralm
 propcache==0.5.2
     # via
     #   aiohttp

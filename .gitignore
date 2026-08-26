@@ -47,8 +47,15 @@ data/cleaned/*
 !data/cleaned/.gitkeep
 data/tokenized/*
 !data/tokenized/.gitkeep
-checkpoints/*
-!checkpoints/.gitkeep
+# Deterministically regenerable via scripts/prepare_grammar_dataset.py
+# (same seed -> same output), same convention as the other data/ dirs above.
+data/grammar/*
+!data/grammar/.gitkeep
+# checkpoints/ is a symlink to an external drive on this machine (see
+# README's "Where checkpoints live" note) — never track it, symlink or
+# directory, since a committed absolute mount path would break for anyone
+# else, or even this machine if the drive mounts elsewhere later.
+checkpoints
 experiments/*
 !experiments/.gitkeep
 *.ckpt

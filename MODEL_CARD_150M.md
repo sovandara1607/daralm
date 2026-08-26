@@ -1,4 +1,4 @@
-# Model Card: DARALM-50M
+# Model Card: DARALM-150M
 
 > Part of the DaraLM project — a from-scratch decoder-only Transformer for Khmer + English, built as an educational/portfolio exercise. **Not a production or commercial-grade language model.** See the repo README for the full project.
 
@@ -12,13 +12,13 @@ Decoder-only Transformer (GPT-style), implemented from scratch:
 
 | | |
 |---|---|
-| Hidden size | 512 |
-| Layers | 8 |
-| Attention heads | 8 (head_dim=64) |
-| Feed-forward size | 2048 |
+| Hidden size | 896 |
+| Layers | 14 |
+| Attention heads | 14 (head_dim=64) |
+| Feed-forward size | 3584 |
 | Context window | 1024 tokens |
 | Vocabulary | 16,000 tokens |
-| Parameters | 33,366,528 |
+| Parameters | 149,235,072 |
 
 ## Languages
 
@@ -47,34 +47,34 @@ Selected over BPE based on measured evaluation: unigram (score 3.474 vs 3.450 �
 | | |
 |---|---|
 | Optimizer | adamw |
-| Learning rate | 0.0003 (cosine decay after warmup) |
+| Learning rate | 0.0002 (cosine decay after warmup) |
 | Weight decay | 0.1 |
 | Precision | bf16 |
-| Batch size (micro / accumulation) | 4 × 4 |
-| Max steps (this checkpoint) | 1500 |
+| Batch size (micro / accumulation) | 2 × 1 |
+| Max steps (this checkpoint) | 300 |
 | Warmup steps | 20 |
 | Seed | 42 |
 
 ## Training Tokens
 
-~24,576,000 tokens seen (16 sequences × 1024 tokens/sequence × 1500 optimizer steps). The training corpus is ~28,938,878 tokens at this tokenizer's real, measured compression rate (not estimated) — so this checkpoint has seen roughly 0.85x the corpus, well under one full pass.
+~614,400 tokens seen (2 sequences × 1024 tokens/sequence × 300 optimizer steps). The training corpus is ~28,938,878 tokens at this tokenizer's real, measured compression rate (not estimated) — so this checkpoint has seen roughly 0.02x the corpus, well under one full pass.
 
 ## Compute Used
 
 - Device: Apple Silicon (MPS) — a consumer laptop, not a training cluster
-- Throughput: avg 6190 tokens/sec
-- Peak device memory: 0.51 GB
+- Throughput: avg 1509 tokens/sec
+- Peak device memory: 2.55 GB
 - Batch size was set empirically after direct benchmarking found a severe MPS-backend performance cliff at larger batch sizes for this model size (see README Phase 7) — not a guess.
 
 ## Evaluation Results
 
-- Final validation loss: 5.2041, perplexity: 182.0
+- Final validation loss: 7.0313, perplexity: 1131.5
 - Overfitting check: no overfitting signal — validation tracking training, still improving
-- Memorization check (spec section 15): 0.0327 average token-match rate over 30 real training documents — 523x the random-chance baseline, but still low in absolute terms; no concerning verbatim memorization detected at this scale/step count.
+- Memorization check (spec section 15): 0.0573 average token-match rate over 30 real training documents — 917x the random-chance baseline, but still low in absolute terms; no concerning verbatim memorization detected at this scale/step count.
 - Fixed-prompt generation samples (temperature=0.8, top-p=0.9):
-  - **english**: `Cambodia is a country in the western Sea of the Middle East. The name of the Assyrian period is: The Name of the India of the Northern Ireland is the ...`
-  - **khmer**: `កម្ពុជាជាប្រទេសមួយនៅសិង្ហបុរី។ ព្រះនាមស.ក. ១៣) ៦៣។ ការបែងចែកឡើងវិញនៅឆ្នាំ ១៩២៥។ ៣៨ នាក់ ខែមករា ប្រទេសកម្ពុជាត្រូវត្រូវធ្វើឡើងក្នុងកម្ពុជា ដែលកងទ័ពប្រទ...`
-  - **mixed**: `ខ្ញុំចង់រៀន machine learning និងមហាវលល។ កិច្ចកិច្ចមនុស្សនេះហើយ គឺជាសកលស្តីពីការតំណាង។ ក្រុមប្រឹក្សាឃុំ សង្កាត់ក្លាក្លានោះ អ្នកសង្កេតការណ៍ត្រូវសម្លាប់ ...`
+  - **english**: `Cambodia is a country in married. The other laws of the clubs that the southwests. This sends. He in the Sign of the first in agerla, the unable of th...`
+  - **khmer**: `កម្ពុជាជាប្រទេសមួយនៅ័បានខាងត្បូង វាធ្វើឿង រាជនោះ របបលោកខ្មែរក្រហមទៅរការបាន សាល និងស្ស្លាប់៥ក្នុងប្រពៃណីខ្បទដឹងខឥការ ទេអ្នកលើោថ្មីរស់នៅ នេះ ថែមទៀត ចំពោ...`
+  - **mixed**: `ខ្ញុំចង់រៀន machine learning និងក ១៤ឱ្យបិកkaនៃតើ រ ដែលថៃបំពេញរtiសបុ ចង់ មកមាសខាងជើងហម៉ាបានលែងលុះប្រាសាទ ។ក្នុងរប្រជំងនេះ នដល់គឺក៏ ដាច់ បុត្រឃើញយករកលើហ...`
 
 ## Known Limitations
 

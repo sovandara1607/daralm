@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from daralm.model.config import ModelConfig  # noqa: E402
+from daralm.tokenizer.tokenizer import DaraLMTokenizer  # noqa: E402
 from daralm.utils.logging import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
@@ -36,8 +37,40 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--evaluation-report", type=Path, default=Path("experiments/evaluation_report.json")
     )
+    parser.add_argument(
+        "--tokenizer",
+        type=Path,
+        default=Path("checkpoints/tokenizer/unigram.model"),
+        help="Used to compute the real corpus token count — never hard-coded (see "
+        "count_corpus_tokens's docstring for the bug this replaced).",
+    )
     parser.add_argument("--output", type=Path, default=Path("MODEL_CARD.md"))
     return parser.parse_args()
+
+
+def count_corpus_tokens(data_dir: Path, tokenizer_path: Path) -> int | None:
+    """Real total token count across the cleaned train/val/test splits.
+
+    This replaced a hard-coded "~8.25M tokens" string that silently went
+    stale the moment the corpus was expanded (Phase 1 -> the 150M scale-up
+    fetched 8,000 docs/language instead of 1,500) — every model card
+    generated in between kept claiming the old, wrong corpus size. Actually
+    tokenizing the corpus is a few seconds of real work; there's no reason
+    to guess when the real number is this cheap to compute.
+    """
+    if not tokenizer_path.exists():
+        return None
+    tokenizer = DaraLMTokenizer.from_pretrained(tokenizer_path)
+    total = 0
+    for split in ("train", "val", "test"):
+        path = data_dir / "cleaned" / f"{split}.jsonl"
+        if not path.exists():
+            continue
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                record = json.loads(line)
+                total += len(tokenizer.encode(record["text"], add_bos=True, add_eos=True))
+    return total
 
 
 def load_json(path: Path) -> dict | None:
@@ -53,6 +86,7 @@ def render(
     corpus_stats: dict | None,
     manifest: dict | None,
     tokenizer_eval: dict | None,
+    corpus_tokens: int | None,
 ) -> str:
     arch = config.architecture
     train = config.training
@@ -154,15 +188,31 @@ def render(
         train.batch_size * train.gradient_accumulation_steps
         * arch.max_position_embeddings * train.max_steps
     )
+    effective_batch = train.batch_size * train.gradient_accumulation_steps
     lines.append("## Training Tokens")
     lines.append("")
-    lines.append(
-        f"~{tokens_trained:,} tokens seen ({train.batch_size * train.gradient_accumulation_steps} "
-        f"sequences × {arch.max_position_embeddings} tokens/sequence × {train.max_steps} "
-        "optimizer steps). The training corpus (Phase 1) is ~8.25M tokens at this tokenizer's "
-        "compression rate, so this checkpoint has seen well under a handful of full passes "
-        "over it — not enough for the memorization check below to be a strong test."
-    )
+    if corpus_tokens:
+        passes = tokens_trained / corpus_tokens
+        if passes < 1:
+            pass_desc = "well under one full pass"
+        elif passes < 2:
+            pass_desc = "a bit over one full pass"
+        else:
+            pass_desc = "multiple passes"
+        lines.append(
+            f"~{tokens_trained:,} tokens seen ({effective_batch} sequences × "
+            f"{arch.max_position_embeddings} tokens/sequence × {train.max_steps} optimizer "
+            f"steps). The training corpus is ~{corpus_tokens:,} tokens at this tokenizer's "
+            f"real, measured compression rate (not estimated) — so this checkpoint has seen "
+            f"roughly {passes:.2f}x the corpus, {pass_desc}."
+        )
+    else:
+        lines.append(
+            f"~{tokens_trained:,} tokens seen ({effective_batch} sequences × "
+            f"{arch.max_position_embeddings} tokens/sequence × {train.max_steps} optimizer "
+            "steps). Corpus token count unavailable (tokenizer not found) — re-run with "
+            "--tokenizer pointing at a valid model file for a full picture."
+        )
     lines.append("")
 
     lines.append("## Compute Used")
@@ -213,8 +263,9 @@ def render(
         "both languages — real words and some real morphology/particles, not coherent "
         "sentences or paragraphs. This is expected at this scale, not a bug."
     )
+    corpus_doc_desc = f"~{corpus_stats['documents']:,}" if corpus_stats else "a small number of"
     lines.append(
-        "- **Small corpus.** ~3,000 Wikipedia documents is a tiny fraction of what "
+        f"- **Small corpus.** {corpus_doc_desc} Wikipedia documents is a tiny fraction of what "
         "production LLMs train on. Facts, if any appear, should not be trusted."
     )
     lines.append(
@@ -273,8 +324,11 @@ def main() -> None:
     corpus_stats = load_json(args.data_dir / "cleaned" / "stats.json")
     manifest = load_json(args.data_dir / "raw" / "MANIFEST.json")
     tokenizer_eval = load_json(args.checkpoints_dir / "tokenizer" / "evaluation_report.json")
+    corpus_tokens = count_corpus_tokens(args.data_dir, args.tokenizer)
+    if corpus_tokens is None:
+        logger.warning("Tokenizer not found at %s — corpus token count omitted", args.tokenizer)
 
-    card = render(config, model_eval, corpus_stats, manifest, tokenizer_eval)
+    card = render(config, model_eval, corpus_stats, manifest, tokenizer_eval, corpus_tokens)
     args.output.write_text(card, encoding="utf-8")
     print(f"Model card written to: {args.output}")
 

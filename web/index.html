@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DaraLM</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ink: #1d1a17;
+    --ink-soft: #5c5650;
+    --paper: #faf6f0;
+    --panel: #ffffff;
+    --line: #e4dcd0;
+    --accent: #a8492f;
+    --accent-ink: #ffffff;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #f1ece4;
+      --ink-soft: #b8afa2;
+      --paper: #17130f;
+      --panel: #201b16;
+      --line: #382f26;
+      --accent: #e0774f;
+      --accent-ink: #1a1310;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: var(--serif);
+    background: var(--paper);
+    color: var(--ink);
+    display: flex;
+    justify-content: center;
+    padding: 2.5rem 1.25rem 4rem;
+  }
+  main { width: 100%; max-width: 760px; }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 1rem;
+    margin-bottom: 1.75rem;
+  }
+  h1 {
+    font-size: 1.6rem;
+    margin: 0;
+    letter-spacing: 0.01em;
+  }
+  h1 em { color: var(--accent); font-style: normal; }
+  #modelInfo {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--ink-soft);
+    text-align: right;
+    line-height: 1.5;
+  }
+  .disclaimer {
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    margin-bottom: 1.75rem;
+    line-height: 1.5;
+  }
+  nav {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid var(--line);
+  }
+  nav button {
+    font-family: inherit;
+    font-size: 0.9rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--ink-soft);
+    padding: 0.6rem 0.9rem;
+    cursor: pointer;
+  }
+  nav button.active { color: var(--ink); border-bottom-color: var(--accent); }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  label {
+    display: block;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-soft);
+    margin: 0.9rem 0 0.35rem;
+  }
+  label:first-child { margin-top: 0; }
+  textarea, input[type="text"] {
+    width: 100%;
+    font-family: var(--serif);
+    font-size: 1rem;
+    color: var(--ink);
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.6rem 0.7rem;
+    resize: vertical;
+  }
+  textarea { min-height: 4.5rem; }
+  .sliders {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0 1.25rem;
+  }
+  .slider-row { display: flex; align-items: center; gap: 0.5rem; }
+  .slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .slider-row output {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    min-width: 2.6em;
+    text-align: right;
+  }
+  button.submit {
+    font-family: inherit;
+    font-size: 0.9rem;
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: none;
+    border-radius: 6px;
+    padding: 0.6rem 1.3rem;
+    margin-top: 1.1rem;
+    cursor: pointer;
+  }
+  button.submit:disabled { opacity: 0.5; cursor: progress; }
+  .result {
+    margin-top: 1.25rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--line);
+  }
+  .result[hidden] { display: none; }
+  .result pre {
+    font-family: var(--serif);
+    font-size: 1rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0 0 0.6rem;
+    line-height: 1.55;
+  }
+  .result .meta {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    color: var(--ink-soft);
+  }
+  .error {
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    margin-top: 1rem;
+    white-space: pre-wrap;
+  }
+  .tok-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.6rem;
+  }
+  .tok {
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.15rem 0.4rem;
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Dara<em>LM</em></h1>
+    <div id="modelInfo">loading model info&hellip;</div>
+  </header>
+  <p class="disclaimer">
+    A from-scratch decoder-only Transformer for Khmer + English — an educational/portfolio
+    project, not a production model. Outputs are frequently fluent-sounding but factually
+    wrong; see the model cards in the
+    <a href="https://github.com/sovandara1607/daralm" target="_blank" rel="noopener">GitHub repo</a>
+    for honest, documented limitations.
+  </p>
+
+  <nav>
+    <button data-tab="chat" class="active">Chat</button>
+    <button data-tab="generate">Generate</button>
+    <button data-tab="tokenize">Tokenize</button>
+  </nav>
+
+  <section class="panel">
+    <form id="chat" class="tab active" data-endpoint="/v1/chat">
+      <label for="chat-instruction">Instruction</label>
+      <textarea id="chat-instruction" required placeholder="What is the capital of France?"></textarea>
+      <div class="sliders">
+        <div>
+          <label>Max new tokens</label>
+          <div class="slider-row">
+            <input type="range" id="chat-max_new_tokens" min="10" max="300" step="10" value="150" />
+            <output>150</output>
+          </div>
+        </div>
+        <div>
+          <label>Temperature</label>
+          <div class="slider-row">
+            <input type="range" id="chat-temperature" min="0" max="1.5" step="0.1" value="0.8" />
+            <output>0.8</output>
+          </div>
+        </div>
+      </div>
+      <button type="submit" class="submit">Send</button>
+      <div class="result" hidden></div>
+    </form>
+
+    <form id="generate" class="tab" data-endpoint="/v1/generate">
+      <label for="generate-prompt">Prompt</label>
+      <textarea id="generate-prompt" required placeholder="Cambodia is"></textarea>
+      <div class="sliders">
+        <div>
+          <label>Max new tokens</label>
+          <div class="slider-row">
+            <input type="range" id="generate-max_new_tokens" min="10" max="300" step="10" value="100" />
+            <output>100</output>
+          </div>
+        </div>
+        <div>
+          <label>Temperature</label>
+          <div class="slider-row">
+            <input type="range" id="generate-temperature" min="0" max="1.5" step="0.1" value="0.8" />
+            <output>0.8</output>
+          </div>
+        </div>
+      </div>
+      <button type="submit" class="submit">Generate</button>
+      <div class="result" hidden></div>
+    </form>
+
+    <form id="tokenize" class="tab" data-endpoint="/v1/tokenize">
+      <label for="tokenize-text">Text</label>
+      <input type="text" id="tokenize-text" required placeholder="កម្ពុជាជាប្រទេសមួយ" />
+      <button type="submit" class="submit">Tokenize</button>
+      <div class="result" hidden></div>
+    </form>
+  </section>
+</main>
+
+<script>
+(function () {
+  const forms = document.querySelectorAll("form.tab");
+  const navButtons = document.querySelectorAll("nav button");
+
+  navButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      navButtons.forEach((b) => b.classList.toggle("active", b === btn));
+      forms.forEach((f) => f.classList.toggle("active", f.id === btn.dataset.tab));
+    });
+  });
+
+  document.querySelectorAll('input[type="range"]').forEach((slider) => {
+    const out = slider.nextElementSibling;
+    out.textContent = slider.value;
+    slider.addEventListener("input", () => { out.textContent = slider.value; });
+  });
+
+  async function loadModelInfo() {
+    const el = document.getElementById("modelInfo");
+    try {
+      const res = await fetch("/v1/model");
+      if (!res.ok) throw new Error(`${res.status}`);
+      const info = await res.json();
+      el.textContent =
+        `${info.model_name} · ${info.parameters.toLocaleString()} params · ` +
+        `step ${info.checkpoint_step} · ${info.device}`;
+    } catch (err) {
+      el.textContent = "model info unavailable (" + err.message + ")";
+    }
+  }
+  loadModelInfo();
+
+  function renderError(resultEl, message) {
+    resultEl.hidden = false;
+    resultEl.innerHTML = `<div class="error">${message}</div>`;
+  }
+
+  function renderChatOrGenerate(resultEl, body, tokensKey, textKey) {
+    resultEl.hidden = false;
+    const text = body[textKey] ?? "";
+    resultEl.innerHTML =
+      `<pre></pre><div class="meta"></div>`;
+    resultEl.querySelector("pre").textContent = text || "(empty response)";
+    resultEl.querySelector(".meta").textContent =
+      `${body.model} · ${body[tokensKey]} tokens generated`;
+  }
+
+  function renderTokenize(resultEl, body) {
+    resultEl.hidden = false;
+    const tokens = body.tokens
+      .map((t) => `<span class="tok">${t.replace(/</g, "&lt;")}</span>`)
+      .join("");
+    resultEl.innerHTML =
+      `<div class="meta">${body.token_count} tokens</div><div class="tok-row">${tokens}</div>`;
+  }
+
+  forms.forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const resultEl = form.querySelector(".result");
+      const submitBtn = form.querySelector("button.submit");
+      submitBtn.disabled = true;
+      resultEl.hidden = true;
+
+      let payload;
+      if (form.id === "chat") {
+        payload = {
+          instruction: document.getElementById("chat-instruction").value,
+          max_new_tokens: Number(document.getElementById("chat-max_new_tokens").value),
+          temperature: Number(document.getElementById("chat-temperature").value),
+        };
+      } else if (form.id === "generate") {
+        payload = {
+          prompt: document.getElementById("generate-prompt").value,
+          max_new_tokens: Number(document.getElementById("generate-max_new_tokens").value),
+          temperature: Number(document.getElementById("generate-temperature").value),
+        };
+      } else {
+        payload = { text: document.getElementById("tokenize-text").value };
+      }
+
+      try {
+        const res = await fetch(form.dataset.endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          const detail = Array.isArray(body.detail)
+            ? body.detail.map((d) => `${d.loc.join(".")}: ${d.msg}`).join("\n")
+            : JSON.stringify(body.detail ?? body, null, 2);
+          renderError(resultEl, detail);
+        } else if (form.id === "chat") {
+          renderChatOrGenerate(resultEl, body, "tokens_generated", "response");
+        } else if (form.id === "generate") {
+          renderChatOrGenerate(resultEl, body, "tokens_generated", "generated_text");
+        } else {
+          renderTokenize(resultEl, body);
+        }
+      } catch (err) {
+        renderError(resultEl, "Request failed: " + err.message);
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
