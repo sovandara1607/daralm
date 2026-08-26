@@ -74,14 +74,31 @@ class RotaryEmbedding(nn.Module):
         inv_freq = 1.0 / (theta ** (torch.arange(0, head_dim, 2).float() / head_dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
-    def forward(self, seq_len: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return (cos, sin), each shaped (seq_len, head_dim)."""
-        if seq_len > self.max_position_embeddings:
+    def forward(
+        self, seq_len: int, device: torch.device, offset: int = 0
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return (cos, sin), each shaped (seq_len, head_dim).
+
+        Args:
+            offset: the absolute position of the first token in this call —
+                0 for a normal full-sequence forward pass (the default,
+                unchanged from before KV-caching existed). When generating
+                with a KV cache (`daralm.inference.generator`), only the
+                *new* token(s) are passed through `forward` each step, but
+                RoPE's rotation angle depends on each token's true position
+                in the full sequence, not its position within this call's
+                short input — `offset` (the cache's current length) is what
+                makes that new token rotate as if it were still at its real
+                position, e.g. position 47, not position 0.
+        """
+        if offset + seq_len > self.max_position_embeddings:
             raise ValueError(
-                f"seq_len ({seq_len}) exceeds max_position_embeddings "
+                f"offset + seq_len ({offset + seq_len}) exceeds max_position_embeddings "
                 f"({self.max_position_embeddings})"
             )
-        positions = torch.arange(seq_len, device=device, dtype=self.inv_freq.dtype)
+        positions = torch.arange(
+            offset, offset + seq_len, device=device, dtype=self.inv_freq.dtype
+        )
         freqs = torch.outer(positions, self.inv_freq)  # (seq_len, head_dim / 2)
         # Duplicate across the two halves of head_dim so `rotate_half` below
         # can pair dimension i with dimension i + head_dim/2 directly.

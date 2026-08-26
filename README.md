@@ -215,7 +215,7 @@ What's new in `daralm/training/`:
 - **`checkpoint.py`** — saves model/optimizer/scheduler state, step, tokens processed, full RNG state (Python/NumPy/Torch/CUDA), the exact config, and a SHA-256 fingerprint of the tokenizer file — `load_checkpoint` raises loudly if you try to resume against a *different* tokenizer than the checkpoint was trained with, rather than silently corrupting training.
 - **`trainer.py`** — the loop itself: gradient accumulation, gradient clipping, mixed precision (autocast + `GradScaler` for fp16), periodic validation, the exact `step=... train_loss=... lr=... tokens/sec=...` log format from the spec.
 
-And `daralm/inference/` (brought forward from Phase 10 because Phase 4 needs it to "verify generation"): `sampling.py` (temperature, top-k, top-p/nucleus, repetition penalty — each independently unit-tested) and `generator.py` (the autoregressive loop; no KV cache yet, deliberately, same "get it correct before it's fast" reasoning as attention in Phase 3).
+And `daralm/inference/` (brought forward from Phase 10 because Phase 4 needs it to "verify generation"): `sampling.py` (temperature, top-k, top-p/nucleus, repetition penalty — each independently unit-tested) and `generator.py` (the autoregressive loop — originally no KV cache, deliberately, same "get it correct before it's fast" reasoning as attention in Phase 3; KV-caching was added later, see "Generation speed: adding a KV cache" below).
 
 ## Phase 5: the overfitting sanity test
 
@@ -674,6 +674,145 @@ Exact match:  0/200
 **Honest read**: scaling up helped substantially — CER roughly halved, and the failure mode qualitatively changed from pure degenerate repetition (`"stant> In addition, stant>..."`) to recognizable, topically-on-target text with real remaining spelling/grammar errors (e.g. `"Attactions Psycologicals fors for example to theories can bed astic, existential, or social."` for a source about attractions/psychology/conspiracy theories — wrong in detail, but clearly *trying* to do the task, not hallucinating something unrelated). **But it still does not beat the no-op baseline** — CER 0.62 is still ~22× worse than doing nothing. Some examples (especially Khmer) still fall into repetition loops. The honest conclusion isn't "fixed" — it's "more budget measurably narrows the gap without closing it," which is real, useful information for anyone deciding whether to keep scaling this specific approach (more data/steps) versus trying a different one (e.g. a larger backbone, or an architecture change) for this task.
 
 Not fixed silently, not hidden — the bug, the fix, and both the corrected and scaled-up held-out results are all documented here, same discipline as every other finding in this project. `ROADMAP_NLP_PLATFORM.md` is updated to reflect the corrected picture.
+
+### A no-op subset, and making the baseline an explicit gate — still a real FAIL
+
+Two more real, targeted changes, not another blind re-run: (1) `scripts/prepare_grammar_dataset.py` now mixes in a `--noop-fraction` (15%) of *uncorrected* examples — instruction and response are the same clean sentence — so the model gets real training signal for "leave this alone," not only "fix this," directly targeting the repetition-loop and over-editing failure modes seen earlier. (2) `scripts/evaluate_grammar.py` now treats beating the no-op baseline as an explicit pass/fail gate (exit code and all), matching `overfit_test.py`'s pattern, rather than reporting the baseline as context the reader has to interpret themselves.
+
+Retrained from scratch on the no-op-augmented dataset (still 12,000 train examples, 2400 steps). Training perplexity improved further: **6.23** final (vs. 7.40 without the no-op subset). Real held-out result:
+
+```
+Model CER:    0.5304   (no-op baseline: 0.0205)
+Model WER:    0.7893   (no-op baseline: 0.0915)
+Exact match:  1/200 (0.50%)
+
+FAIL — model CER (0.5304) does not beat the no-op baseline (0.0205).
+```
+
+**Still a real FAIL, honestly reported as one.** CER improved again (0.62 → 0.53), a modest further narrowing in the same direction as the earlier scale-up — but the model remains roughly **26× worse than doing nothing**. Real generations show the no-op subset didn't fix the underlying problem: the Khmer example still degenerates into a repeated-syllable loop (`"...មហាមហាមហា..."` dozens of times), and English shows a new pattern — partial correction followed by garbling (`"Attactions Psyhcologicals fors for example can bed as-ories can bed asticial..."`) rather than either a clean fix or pure repetition. Teaching "sometimes leave it alone" didn't teach "how to actually fix what's wrong" — a different, narrower problem than the one this change targeted. The explicit PASS/FAIL gate is doing its job here: no rounding a real failure up to a qualified success.
+
+## DaraLM-50M-Instruct, retrained on a 3× larger dataset — perplexity improved, real quality didn't
+
+The third of three tracks aimed at strengthening the 50M baseline (alongside grammar correction and structured JSON above), following the same "scale up the existing, already-vetted recipe" move that measurably helped grammar: fetched more from the same sources (`--n-english 1500 --n-khmer 1200`, from 300/300) via `scripts/prepare_instruction_dataset.py`, taking the train set from 784 to **2,313 examples** (real, verified: 0 malformed lines). `configs/50m-instruct.yaml` scaled from 300→900 steps to match, and `block_size` raised to 832 after a real measurement (`max=777` tokens on the new data — the old default of 512 would have silently dropped ~1% of examples).
+
+Retrained from Base. Final validation perplexity: **79.98**, down from the original Instruct model's 110.7.
+
+**Given every other lesson this session, perplexity alone was not trusted.** Real generation, same fixed prompts used earlier in this document:
+
+| Prompt | Original (perplexity 110.7) | Retrained (perplexity 79.98) |
+|---|---|---|
+| "What is the capital of France?" | `...The highest major major cities are: The New York Times...` | `...The city is instantly headed by the Scottish Pege, a and few days. The city is ajoining park is the great portion of the cities that are traditionally Peters...` |
+| "What is 2 + 2?" | *(not previously tested)* | `1: 1.` |
+
+**Honest read: no real improvement.** The retrained model still produces confident, fluent-sounding, factually empty output — different specific nonsense, not better nonsense. "What is 2 + 2?" got a wrong, incoherent answer. A 28% perplexity improvement did not translate into any detectable gain in real coherence or correctness — the same disconnect between the loss the model was optimized on and the capability actually being asked for that's now been observed three separate times this session (grammar, structured JSON, and now instruct-following). More instruction-tuning data on the same small backbone did not close this gap.
+
+### Where this leaves the "strengthen the 50M baseline" plan
+
+Of the three tracks: **JSON showed real, measurable progress** (0% → 42% exact-value-match on a properly-designed test, a genuine capability gain, with a specific known remaining limitation). **Grammar correction and instruct-following did not** — both improved in perplexity, neither improved in the real, held-out behavior that actually matters, and grammar's own explicit pass/fail gate still reads FAIL. The honest conclusion: this 50M backbone has a real, demonstrated ceiling on generation-quality tasks (grammar, open-ended instruction-following) that more data and more SFT steps have not moved, across three separate attempts this session — while the same backbone genuinely *can* learn new behaviors when the task has a tighter, more mechanical structure (classification, and now to a real if partial degree, structured extraction). **150M v2 should not be attempted assuming these three tracks "fixed" the 50M baseline** — two of three didn't, and scaling a not-yet-fixed generation-quality problem up to 150M repeats this session's own earlier 150M lesson (params without proportionally more of everything else made things worse, not better) rather than addressing it.
+
+### A fourth test of the diagnosis: corpus-grounded, closed-book QA
+
+The instruct-following result raised a real question: is more/better SFT data the wrong lever entirely, and the actual bottleneck this model's tiny pretraining corpus (~29M tokens — for comparison, even GPT-2 Small trained on roughly 1,000× more)? Alpaca-style instructions assume broad world knowledge a corpus this size has nowhere near enough exposure to teach reliably. A more targeted test: build QA pairs *directly from the same Wikipedia articles the model was pretrained on* (`daralm/data/corpus_qa.py` — a real, disclosed ~50% definitional-sentence match rate on the corpus, `scripts/prepare_corpus_qa_dataset.py`, 7,021 real train examples), and ask closed-book (no context at inference) — the most direct test possible of whether SFT can surface knowledge the base model actually has, using facts it had the best possible chance of having learned.
+
+SFT'd from Base, 1,400 steps. Training perplexity: 44.0 → 31.8, steady, still declining at the budget's end. Real result on 30 held-out questions:
+
+```
+Q: What is Isaacs?
+GENERATED: Alexanders (; ; ; ) is a town in the district of the district of the district...
+EXPECTED: Isaacs (born December 18, 1946...) is an American professional poker player...
+
+Q: What is Batman & Robin?
+GENERATED: Batmanman is a former professional football club based in the United States.
+EXPECTED: Batman & Robin is a 1997 American superhero film based on the DC Comics characters...
+
+avg CER: 1.11 | exact matches: 0/30
+```
+
+**Zero exact matches — but a genuinely informative zero, not a flat "still broken".** Every generated answer is a *structurally correct* Wikipedia-style definitional sentence — right genre, right grammar, right general shape ("is a former X based in Y", "is an American Z") — just built from fabricated, wrong facts. The model learned the *format* SFT was teaching it perfectly; it did not reliably retain the *content*, even when that content came from the exact corpus it was pretrained on and the question was built to ask about it as directly as possible. This is stronger evidence for the pretraining-scale diagnosis than the instruct result alone: if grounding the SFT data in the model's own pretraining corpus doesn't help, the honest conclusion is that ~29M tokens simply isn't enough exposure for most individual facts to be reliably learned at all — no SFT recipe, generic or grounded, can teach a model a fact its pretraining never gave it enough repetition to actually learn. **Four for four this session** (grammar, JSON's early versions, instruct, corpus-QA) showing the same pattern: SFT-side interventions reliably move perplexity and reliably fail to move real generation-quality tasks that require either precise editing or a large space of correct answers — while classification and (with the right dataset design) structured extraction, both narrower and more mechanical, are the demonstrated exceptions.
+
+## Generation speed: adding a KV cache
+
+Phase 4's `generator.py` deliberately shipped without a KV cache — "get it correct before it's fast," the same reasoning Phase 3's hand-written attention used. With SFT experiments now running real evaluation loops that call `generate_chat` hundreds of times per run, that tradeoff was revisited for real.
+
+**What changed**: `daralm/model/attention.py`'s `CausalSelfAttention`, `transformer_block.py`, and `transformer.py` all gained an additive `past_key_value`/`use_cache` path — every existing call site (training, every prior evaluation script) is unaffected, since the new arguments default to `None`/`False` and every pre-existing test still passes unchanged. `daralm/inference/generator.py`'s `generate`/`generate_chat` now process the prompt once, then feed only the newest token through on each subsequent step, reusing cached per-layer keys/values instead of recomputing every prior token's attention from scratch — turning the loop from O(sequence_length²) into O(sequence_length) total work.
+
+**Correctness verified before trusting the speed**: `tests/test_model.py`'s `test_cached_incremental_generation_matches_full_recomputation` feeds the same sequence through both the full-recompute path and a token-by-token cached path and asserts the logits are bit-identical (`atol=1e-5`) at every position — a real, targeted test of the property that actually matters (a cache returning *different* results would be a silent correctness bug, worse than no cache at all), not just a shape/doesn't-crash check.
+
+**Real, honest speed measurement** — first attempt was misleading, corrected before reporting: at short lengths (default generation, ~80 tokens, often stopping early on `</assistant>`/`<eos>`), the cache actually measured *slower* (0.69s vs 0.38s per call) — MPS's per-step dispatch overhead for tiny (1-token) forward passes was eating the asymptotic savings at this scale. Controlling for that (forcing a fixed token count with early stopping disabled, `generate(..., stop_on_eos=False)`) gave the real picture:
+
+| max_new_tokens (forced) | No cache | Cached | Speedup |
+|---|---|---|---|
+| 50 | 0.61s | 0.34s | 1.79× |
+| 200 | 1.84–2.74s | 1.28–1.35s | 1.4–2.1× (real MPS run-to-run variance) |
+| 500 | 10.33s | 3.35s | 3.09× |
+
+**Honest read**: a real, growing speedup at the lengths that matter for actual evaluation runs (hundreds of tokens), consistent with the theoretical O(n²)→O(n) improvement — but a genuinely mixed picture at the shortest lengths, where MPS overhead can dominate, and real run-to-run noise throughout (the same MPS-measurement variability documented elsewhere in this project, e.g. the DaraLM-150M throughput-benchmark correction). Not oversold as a clean universal win; reported as measured, both the surprising initial result and the corrected one.
+
+## NLP platform roadmap, Stage 2 item 4: structured JSON generation — a perfect score that wasn't what it looked like
+
+Structured JSON generation is `ROADMAP_NLP_PLATFORM.md`'s explicit go/no-go gate before NER, tool calling, or NL-to-SQL are attempted at all. Fully synthetic, template-generated data (`daralm/data/structured_facts.py`): a small fixed vocabulary of names/occupations/cities (bilingual, en/km) combined into simple sentences with a known-correct JSON target — `{"name", "age", "occupation", "city"}`. 12,000 train examples, SFT'd from DaraLM-50M Base for 2400 steps (`configs/50m-json.yaml`) — the scaled-up budget from the start, informed by the grammar-correction lesson above rather than re-discovering it.
+
+**Training perplexity hit ~1.00 by step 600** — essentially a perfect fit, faster and cleaner than either classification or grammar correction.
+
+**The official held-out evaluation (`scripts/evaluate_json.py`, 200 test examples) looked like a clean, total win:**
+
+```
+Valid-JSON rate:        100.00%   (baseline '{}': 100.00%)
+Schema-match rate:      100.00%   (baseline '{}': 0.00%)
+Exact-value-match rate: 100.00%
+```
+
+**Given grammar correction's lesson — a great number doesn't mean the real capability is there — this was stress-tested rather than trusted at face value.** The held-out test set draws from the *same small, fixed vocabulary* as training (just different combinations of it), so "held-out" here only tests recombination, not real generalization to unseen entities. A follow-up test used 30 genuinely novel names/occupations/cities that never appeared anywhere in training:
+
+```
+n=30
+Valid-JSON rate:    93.33%
+Schema-match rate:  93.33%
+age (numeric, copied verbatim) correct:  28/30 = 93.33%
+name correct:        0/30   (substituted a memorized vocab name  26/30 times)
+occupation correct:  0/30   (substituted a memorized vocab occupation 28/30 times)
+city correct:        0/30   (substituted a memorized vocab city  28/30 times)
+```
+
+**The honest picture**: the model didn't learn to *extract* text spans from the input — it learned to *classify* each slot into one of a small, closed set of known values it memorized during training, dressed up as extraction. The one field that genuinely transfers to novel input is `age`, a raw number that was never part of a closed vocabulary in the first place — direct evidence for the diagnosis, not just a guess. Valid-JSON rate and schema-match rate both stayed high on novel input (the model still confidently produces the right *shape*), which means neither metric alone would have caught this — exactly the reason `ROADMAP_NLP_PLATFORM.md` treats valid-JSON rate as a necessary but not sufficient first gate, not the whole test.
+
+**Why this happened, and what it means going forward**: the dataset's own design — a small, fixed vocabulary — made the task learnable as closed-set classification rather than forcing genuine span-copying. That's a property of *this dataset*, not necessarily a hard ceiling on the architecture's extraction ability; it wasn't discovered by the official pipeline, only by deliberately testing outside the training distribution. The actionable lesson for NER, tool calling, or NL-to-SQL (all needing genuine open-vocabulary extraction over real entities): a closed-vocabulary synthetic dataset will produce a misleadingly perfect score, and evaluation must specifically include held-out *entities*, not just held-out *combinations* of known ones, or a real capability gap will go undetected exactly the way this one did on the official test set alone.
+
+### The fix, and a more definitive (still negative) answer
+
+The dataset was rebuilt properly, not just expanded: `daralm/data/structured_facts.py` now splits each field's vocabulary itself — first names, last names, occupations, cities — 80/20 into disjoint train/test pools (fixed seed, so the split is stable), and grew each pool substantially (from ~12-15 items to 32-40 for English). A name, occupation, or city drawn for the test split is now *provably* unreachable from training — verified directly (zero set-intersection across all three fields, `test_train_and_test_splits_never_share_field_values`), not assumed.
+
+Retrained from scratch on this corrected dataset (`configs/50m-json.yaml`, same recipe). Training again converged to ~1.00 perplexity. The real, properly-held-out result:
+
+```
+Valid-JSON rate:        100.00%   (baseline '{}': 100.00%)
+Schema-match rate:      90.50%    (baseline '{}': 0.00%)
+Exact-value-match rate: 0.00%
+```
+
+**Zero.** Not partial credit, not a smaller gap than the flawed dataset suggested — genuinely 0/200 correct on entities the model never saw, this time on a properly constructed official test, not just an ad hoc stress test. A second, independent check (`scripts/evaluate_json_novel_vocab.py`, its own hand-authored novel-entity list) confirms it: 100% valid-JSON, 100% schema-match, but 0/30 correct for name/occupation/city — only `age` (100%, still never part of a closed vocabulary) transfers. Both checks now agree cleanly.
+
+**One more real bug, caught and fixed along the way**: the two "novel" vocabulary lists — `structured_facts.py`'s expanded training pool and `evaluate_json_novel_vocab.py`'s stress-test list — were authored independently but drew from the same mental well of "unusual-sounding names/jobs/cities," and silently overlapped on 5/10 occupations and 9/10 cities. That overlap inflated the stress test's occupation/city accuracy (11/30 and 27/30 respectively) with values the model actually *had* seen in training, undermining exactly the independence the test was supposed to provide. Found by checking, not assumed away — re-picked a genuinely disjoint list, and added `tests/test_evaluate_json_novel_vocab_disjoint.py` so the two lists can't silently drift back into overlap as either one changes.
+
+**The v2 conclusion at the time**: this isn't a small-vocabulary artifact that a bigger dataset fixes — a meaningfully larger, genuinely open, disjoint vocabulary produced the *same* 0% outcome, pointing to a real, likely-architectural ceiling (no explicit copy mechanism) rather than a fixable data-quantity problem.
+
+### v3: that conclusion turned out to be wrong — it was still a data problem, just not "vocabulary size"
+
+v2's fields still drew from a *finite* pool of realistic-looking names/occupations/cities — the model had every incentive to treat the task as "pick the closest match from a list" rather than "copy this exact string," because during training a lookup shortcut always existed. v3 removes that shortcut entirely: `daralm/data/structured_facts.py` now generates a fresh, phonotactically-plausible-but-invented random string for every single field, every single example, train or test (`_random_en_word`, `_random_km_word` — real syllable-structure rules, zero fixed vocabulary). There is no table left to memorize.
+
+Retrained from scratch on this dataset. Training perplexity converged to **1.17** — notably *not* the ~1.00 v1/v2 reached, itself a signal the task got genuinely harder, not gameable the same way. Real held-out result:
+
+```
+Valid-JSON rate:        85.50%   (baseline '{}': 100.00%)
+Schema-match rate:      85.50%   (baseline '{}': 0.00%)
+Exact-value-match rate: 42.00%
+```
+
+**A real, qualitative shift, not just a better number.** v2's failures were substitutions — a completely different, memorized value swapped in with total confidence. v3's failures are copying mistakes on long strings — `"Droopclieshmol Criethdunbo"` came back as `"Droopclieshpla Griethdunbo"`, a handful of characters wrong in a 24-character string, not a wholesale swap. Short Khmer values (typically 2-4 characters per syllable) were frequently copied perfectly. This is the signature of a model actually attempting to copy, imperfectly, not one classifying into a memorized set — direct evidence that a copy mechanism **is** learnable by this recipe, contradicting the v2 writeup's "likely-architectural ceiling" conclusion above.
+
+**But a new, real limitation replaced it**: a second independent check (`scripts/evaluate_json_novel_vocab.py`, now repurposed to test *real, recognizable* English words/names instead of a vocab-overlap check that no longer applies) found **0/30 exact matches** — `"Marie Curie"` came back as `"Cururie Fonie"`, unrelated to the actual input. The learned copy behavior is narrowly tuned to the specific character/syllable statistics of the synthetic training distribution; it does not transfer to a different surface distribution (real words) it never saw during training.
+
+**The honest, now three-part picture**: (1) a finite vocabulary, however large, gets gamed as classification, not extraction (v1/v2); (2) genuinely unbounded training values force real copy-mechanism learning (v3's 42%, a real result); (3) that learned mechanism is currently distribution-specific, not a general-purpose copy operation — the training data's character statistics leaked into what got learned, same lesson as v1/v2 just one level deeper. The fix implied for next time: train on random strings that also vary in *style* (real-word-like, syllable-soup, alphanumeric, mixed-script), not just randomized *content* within one style, so the model can't over-fit to one surface distribution's statistics either. **Stage 3 (NER, tool calling, NL-to-SQL)**: the copy-mechanism ceiling from the v2 writeup is retracted — real extraction is achievable with this recipe — but any Stage 3 dataset needs genuinely varied surface forms in training, not just varied content, or it will hit this same narrow-transfer wall.
 
 ## Running tests
 

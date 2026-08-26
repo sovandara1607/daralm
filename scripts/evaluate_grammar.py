@@ -13,7 +13,10 @@ for a correction task.
 A no-op baseline (CER/WER of the corrupted input against the reference,
 with zero model involvement) is reported alongside the model's score —
 without it, a low CER could just mean "the corruption was mild," not "the
-model fixed anything."
+model fixed anything." That baseline is now the explicit pass/fail gate,
+not just context: a grammar-correction model that can't beat "do nothing"
+hasn't demonstrated the capability at all, whatever its own raw CER looks
+like in isolation.
 
 Usage:
     python scripts/evaluate_grammar.py \\
@@ -126,12 +129,32 @@ def main() -> None:
     avg_baseline_cer = sum(baseline_cer) / n
     avg_baseline_wer = sum(baseline_wer) / n
 
+    # The no-op baseline as an explicit gate, not just reported context —
+    # matches overfit_test.py's/overfit_test_grammar.py's pattern of a
+    # real pass/fail verdict with an exit code, rather than a printout
+    # the reader has to interpret themselves.
+    passed = avg_model_cer < avg_baseline_cer
+
     print()
     print("=== Grammar Correction Evaluation ===")
     print(f"Examples evaluated: {n}")
     print(f"Model CER:    {avg_model_cer:.4f}   (no-op baseline: {avg_baseline_cer:.4f})")
     print(f"Model WER:    {avg_model_wer:.4f}   (no-op baseline: {avg_baseline_wer:.4f})")
     print(f"Exact match:  {exact_matches}/{n} ({exact_matches / n:.2%})")
+    print()
+    if passed:
+        print(
+            f"PASS — model CER ({avg_model_cer:.4f}) beats the "
+            f"no-op baseline ({avg_baseline_cer:.4f})."
+        )
+    else:
+        print(
+            f"FAIL — model CER ({avg_model_cer:.4f}) does not beat the "
+            f"no-op baseline ({avg_baseline_cer:.4f})."
+        )
+        print("The model has not demonstrated real correction capability on this held-out set.")
+
+    sys.exit(0 if passed else 1)
 
 
 if __name__ == "__main__":

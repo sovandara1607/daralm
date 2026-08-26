@@ -17,6 +17,19 @@ grammar val from cleaned val, etc.) — never re-split independently — so no
 sentence from a base-pretraining val/test document can leak into this
 task's train split.
 
+**Now includes a no-op subset** (`--noop-fraction`, default 0.15): that
+fraction of each split's sentences are used *uncorrupted* — instruction
+and response are the same clean sentence. Two real reasons, not just "more
+data": (1) a real held-out evaluation (README.md, Stage 2 item 3) already
+treats the no-op baseline — do nothing, output the input unchanged — as
+the benchmark this task has to beat; the model was never actually trained
+on a single example of "this input needs no changes," so it had no
+opportunity to learn when to leave text alone, only when to change it.
+(2) this directly encodes "minimal edits" as a training signal: a model
+that's seen both "fix this" and "this is already fine, don't touch it"
+examples has a real incentive to change only what's actually wrong,
+rather than rewriting on every input out of habit.
+
 Usage:
     python scripts/prepare_grammar_dataset.py --sentences-per-split 3000
 """
@@ -46,9 +59,11 @@ def build_split(
     records: list[dict],
     sentences_wanted: int,
     corruption_rate: float,
+    noop_fraction: float,
     seed: int,
 ) -> list[dict]:
-    """Extract sentences from `records`, corrupt each, return instruction/response pairs."""
+    """Extract sentences from `records`, corrupt most of them (leaving
+    `noop_fraction` uncorrupted), return instruction/response pairs."""
     rng = random.Random(seed)
 
     all_sentences: list[tuple[str, str]] = []  # (sentence, language)
@@ -66,13 +81,19 @@ def build_split(
         # every sentence sharing one rng.Random instance's exact call
         # sequence, which would make `sentences_wanted` change every
         # sentence's corruption downstream of it.
-        corrupted = corrupt_text(sentence, corruption_rate=corruption_rate, seed=seed + i)
+        example_rng = random.Random(seed + i)
+        is_noop = example_rng.random() < noop_fraction
+        corrupted = (
+            sentence
+            if is_noop
+            else corrupt_text(sentence, corruption_rate=corruption_rate, seed=seed + i)
+        )
         examples.append(
             {
                 "instruction": INSTRUCTION_TEMPLATE.format(corrupted=corrupted),
                 "response": sentence,
                 "language": language,
-                "source": "synthetic_corruption",
+                "source": "synthetic_noop" if is_noop else "synthetic_corruption",
             }
         )
     return examples
@@ -91,6 +112,13 @@ def parse_args() -> argparse.Namespace:
         "relative to train (val and test each get this fraction of train's count)",
     )
     parser.add_argument("--corruption-rate", type=float, default=0.15)
+    parser.add_argument(
+        "--noop-fraction",
+        type=float,
+        default=0.15,
+        help="Fraction of each split's sentences left uncorrupted — teaches "
+        "'nothing to fix here, leave it alone' as well as 'fix this'.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -114,16 +142,22 @@ def main() -> None:
             records,
             sentences_wanted=wanted,
             corruption_rate=args.corruption_rate,
+            noop_fraction=args.noop_fraction,
             seed=args.seed,
         )
         output_path = args.output_dir / f"instructions_{split_name}.jsonl"
         save_jsonl(examples, output_path)
-        logger.info("Wrote %d examples to %s", len(examples), output_path)
+        noop_count = sum(1 for e in examples if e["source"] == "synthetic_noop")
+        logger.info(
+            "Wrote %d examples to %s (%d no-op, %.1f%%)",
+            len(examples), output_path, noop_count, 100 * noop_count / len(examples),
+        )
         summary[split_name] = len(examples)
 
     print()
     print("=== Grammar Dataset Preparation Summary ===")
     print(f"Corruption rate: {args.corruption_rate}")
+    print(f"No-op fraction: {args.noop_fraction}")
     for split_name, count in summary.items():
         print(f"{split_name}: {count} examples")
 

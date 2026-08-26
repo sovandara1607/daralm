@@ -29,7 +29,7 @@ def test_output_shape_matches_input():
     attn, rope = _make_attention(hidden_size=32, num_heads=4)
     x = torch.randn(2, 10, 32)
     cos, sin = rope(seq_len=10, device=x.device)
-    out = attn(x, cos, sin)
+    out, _ = attn(x, cos, sin)
     assert out.shape == x.shape
 
 
@@ -45,7 +45,7 @@ def test_various_batch_sizes(batch_size):
     attn, rope = _make_attention()
     x = torch.randn(batch_size, 6, 32)
     cos, sin = rope(seq_len=6, device=x.device)
-    out = attn(x, cos, sin)
+    out, _ = attn(x, cos, sin)
     assert out.shape == (batch_size, 6, 32)
 
 
@@ -54,7 +54,7 @@ def test_various_sequence_lengths(seq_len):
     attn, rope = _make_attention(max_pos=64)
     x = torch.randn(2, seq_len, 32)
     cos, sin = rope(seq_len=seq_len, device=x.device)
-    out = attn(x, cos, sin)
+    out, _ = attn(x, cos, sin)
     assert out.shape == (2, seq_len, 32)
 
 
@@ -89,8 +89,8 @@ def test_no_access_to_future_tokens():
 
     cos, sin = rope(seq_len=seq_len, device=x_a.device)
     with torch.no_grad():
-        out_a = attn(x_a, cos, sin)
-        out_b = attn(x_b, cos, sin)
+        out_a, _ = attn(x_a, cos, sin)
+        out_b, _ = attn(x_b, cos, sin)
 
     # Positions before the cutoff must be unaffected by the perturbation.
     assert torch.allclose(out_a[:, :cutoff, :], out_b[:, :cutoff, :], atol=1e-6)
@@ -107,8 +107,8 @@ def test_dropout_zero_is_deterministic():
     x = torch.randn(1, 5, 32)
     cos, sin = rope(seq_len=5, device=x.device)
     with torch.no_grad():
-        out1 = attn(x, cos, sin)
-        out2 = attn(x, cos, sin)
+        out1, _ = attn(x, cos, sin)
+        out2, _ = attn(x, cos, sin)
     assert torch.equal(out1, out2)
 
 

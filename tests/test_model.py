@@ -272,3 +272,92 @@ def test_full_model_has_no_access_to_future_tokens():
         logits_b = model(input_ids_b).logits
 
     assert torch.allclose(logits_a[:, :cutoff, :], logits_b[:, :cutoff, :], atol=1e-5)
+
+
+# --- KV cache: the real optimization, tested for the property that
+# actually matters — cached generation must produce bit-identical results
+# to full recomputation, not just "run without crashing". A cache that
+# returns *different* logits than the uncached path would be a silent
+# correctness bug, worse than no cache at all (see
+# daralm.model.attention.CausalSelfAttention.forward's docstring for why
+# this optimization exists).
+
+
+def test_cache_is_none_by_default():
+    config = _tiny_architecture()
+    model = DaraLMTransformer(config)
+    input_ids = torch.randint(0, config.vocab_size, (1, 5))
+    output = model(input_ids)
+    assert output.past_key_values is None
+
+
+def test_use_cache_returns_one_kv_pair_per_layer():
+    config = _tiny_architecture(num_layers=3)
+    model = DaraLMTransformer(config)
+    input_ids = torch.randint(0, config.vocab_size, (1, 5))
+    output = model(input_ids, use_cache=True)
+    assert output.past_key_values is not None
+    assert len(output.past_key_values) == 3
+    for key, value in output.past_key_values:
+        # (batch, heads, seq_len, head_dim)
+        assert key.shape == (1, config.num_attention_heads, 5, config.head_dim)
+        assert value.shape == (1, config.num_attention_heads, 5, config.head_dim)
+
+
+def test_cached_incremental_generation_matches_full_recomputation():
+    """The critical correctness property: feeding a prompt token-by-token
+    with a growing KV cache must produce exactly the same logits, at every
+    position, as feeding the whole sequence at once with no cache at all.
+    If RoPE's position offset or the causal mask's cache-aware slicing
+    were wrong, this is the test that would catch it — shape-only tests
+    would not.
+    """
+    torch.manual_seed(0)
+    config = _tiny_architecture(dropout=0.0)
+    model = DaraLMTransformer(config)
+    model.eval()
+
+    seq_len = 6
+    input_ids = torch.randint(0, config.vocab_size, (1, seq_len))
+
+    with torch.no_grad():
+        full_logits = model(input_ids).logits  # (1, seq_len, vocab_size), no cache
+
+        # Now the same sequence, one new token at a time, threading the
+        # cache through — this is exactly the loop
+        # daralm.inference.generator.generate uses.
+        past_key_values = None
+        cached_logits = []
+        for t in range(seq_len):
+            step_output = model(
+                input_ids[:, t : t + 1], past_key_values=past_key_values, use_cache=True
+            )
+            cached_logits.append(step_output.logits)
+            past_key_values = step_output.past_key_values
+        cached_logits = torch.cat(cached_logits, dim=1)
+
+    assert torch.allclose(full_logits, cached_logits, atol=1e-5)
+
+
+def test_cache_grows_by_one_position_per_step():
+    config = _tiny_architecture()
+    model = DaraLMTransformer(config)
+    input_ids = torch.randint(0, config.vocab_size, (1, 3))
+
+    output = model(input_ids, use_cache=True)
+    assert output.past_key_values[0][0].size(2) == 3
+
+    next_token = torch.randint(0, config.vocab_size, (1, 1))
+    output2 = model(next_token, past_key_values=output.past_key_values, use_cache=True)
+    assert output2.past_key_values[0][0].size(2) == 4
+
+
+def test_cache_plus_new_tokens_beyond_max_position_raises():
+    config = _tiny_architecture(max_position_embeddings=8)
+    model = DaraLMTransformer(config)
+    input_ids = torch.randint(0, config.vocab_size, (1, 6))
+    output = model(input_ids, use_cache=True)  # cache length 6
+
+    too_many_new = torch.randint(0, config.vocab_size, (1, 3))  # 6 + 3 > 8
+    with pytest.raises(ValueError):
+        model(too_many_new, past_key_values=output.past_key_values, use_cache=True)

@@ -59,7 +59,12 @@ class TransformerBlock(nn.Module):
         x: torch.Tensor,
         rotary_cos: torch.Tensor,
         rotary_sin: torch.Tensor,
-    ) -> torch.Tensor:
-        x = x + self.attention(self.attention_norm(x), rotary_cos, rotary_sin)
+        past_key_value: tuple[torch.Tensor, torch.Tensor] | None = None,
+        use_cache: bool = False,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
+        attn_out, present_key_value = self.attention(
+            self.attention_norm(x), rotary_cos, rotary_sin, past_key_value, use_cache
+        )
+        x = x + attn_out
         x = x + self.feed_forward(self.ffn_norm(x))
-        return x
+        return x, present_key_value

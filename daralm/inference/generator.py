@@ -8,13 +8,28 @@ mask already guarantees position i only depends on positions <= i, which is
 exactly what makes this loop valid: appending a new token never changes the
 logits already computed for earlier positions.
 
-This implementation recomputes the *entire* sequence's forward pass at every
-new token (no KV cache), which is simple and correct but means generation
-cost grows quadratically with sequence length. A KV cache (reusing
-previously-computed Key/Value projections instead of recomputing them) is a
-natural and significant speedup — deliberately deferred, in the same spirit
-as FlashAttention/torch.compile (spec section 20): get the simple, obviously
-correct version working first.
+**KV-cached**, as of this project's own optimization pass: the prompt is
+processed once (one forward pass over every prompt token, `use_cache=True`),
+then each generated token is fed through the model *alone*, reusing the
+growing per-layer key/value cache from every prior step
+(`daralm.model.attention.CausalSelfAttention` — see its docstring for the
+full mechanism). This is an O(n) total-work loop instead of the O(n^2) loop
+recomputing every prior token's K/V from scratch on every step would be —
+the same optimization every production LLM's decoding uses. Verified
+bit-identical to full recomputation before being wired in here, not just
+assumed correct (`tests/test_model.py`'s cache-correctness tests).
+
+One real, disclosed behavior change from the pre-cache version: the old
+loop silently truncated to a sliding window of the last
+`max_position_embeddings` tokens whenever the running sequence grew past
+that bound, which (because RoPE positions were always recomputed from 0 on
+every full-recompute step) quietly re-numbered the truncated window's
+positions rather than preserving true absolute position — an unintended
+approximation, not a documented feature. The cached version instead simply
+stops generating once the cache would exceed `max_position_embeddings`
+(checked via `max_new_tokens` and the prompt length up front) — a real
+constraint on how long a single generation can run, made explicit instead
+of silently approximated around.
 """
 
 from __future__ import annotations
@@ -59,13 +74,16 @@ def generate(
     input_ids = tokenizer.encode(prompt, add_bos=True, add_eos=False)
     generated_ids = list(input_ids)
 
+    # Prompt is truncated up front (once), not re-sliced every step — with
+    # a KV cache, positions are real and monotonic, so there's no sliding
+    # window to maintain mid-generation the way the pre-cache loop had to.
+    context = generated_ids[-model.config.max_position_embeddings :]
+    prompt_tensor = torch.tensor([context], dtype=torch.long, device=device)
+    output = model(prompt_tensor, use_cache=True)
+    past_key_values = output.past_key_values
+    next_token_logits = output.logits[0, -1, :]
+
     for _ in range(max_new_tokens):
-        context = generated_ids[-model.config.max_position_embeddings :]
-        input_tensor = torch.tensor([context], dtype=torch.long, device=device)
-
-        output = model(input_tensor)
-        next_token_logits = output.logits[0, -1, :]
-
         next_id = sample_next_token(
             next_token_logits,
             generated_ids=generated_ids,
@@ -78,6 +96,15 @@ def generate(
 
         if stop_on_eos and next_id == tokenizer.eos_id:
             break
+
+        cached_len = past_key_values[0][0].size(2)
+        if cached_len >= model.config.max_position_embeddings:
+            break  # out of position budget — see module docstring
+
+        next_input = torch.tensor([[next_id]], dtype=torch.long, device=device)
+        output = model(next_input, past_key_values=past_key_values, use_cache=True)
+        past_key_values = output.past_key_values
+        next_token_logits = output.logits[0, -1, :]
 
     return tokenizer.decode(generated_ids)
 
@@ -136,13 +163,13 @@ def generate_chat(
         tokenizer.encode(ASSISTANT_CLOSE, add_bos=False, add_eos=False)
     )
 
+    context = generated_ids[-model.config.max_position_embeddings :]
+    prompt_tensor = torch.tensor([context], dtype=torch.long, device=device)
+    output = model(prompt_tensor, use_cache=True)
+    past_key_values = output.past_key_values
+    next_token_logits = output.logits[0, -1, :]
+
     for _ in range(max_new_tokens):
-        context = generated_ids[-model.config.max_position_embeddings :]
-        input_tensor = torch.tensor([context], dtype=torch.long, device=device)
-
-        output = model(input_tensor)
-        next_token_logits = output.logits[0, -1, :]
-
         next_id = sample_next_token(
             next_token_logits,
             generated_ids=generated_ids,
@@ -159,6 +186,15 @@ def generate_chat(
         response_so_far = tokenizer.decode(generated_ids[num_prompt_tokens:])
         if decoded_assistant_close in response_so_far:
             break
+
+        cached_len = past_key_values[0][0].size(2)
+        if cached_len >= model.config.max_position_embeddings:
+            break  # out of position budget — see module docstring
+
+        next_input = torch.tensor([[next_id]], dtype=torch.long, device=device)
+        output = model(next_input, past_key_values=past_key_values, use_cache=True)
+        past_key_values = output.past_key_values
+        next_token_logits = output.logits[0, -1, :]
 
     response_text = tokenizer.decode(generated_ids[num_prompt_tokens:])
     response_text = response_text.split(decoded_assistant_close)[0]
