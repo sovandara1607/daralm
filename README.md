@@ -664,7 +664,16 @@ Exact match:  0/200
 
 **A separate, valuable side effect**: the `generate_chat` fix applies to every chat-based capability in this project, not just grammar correction — any prior evaluation relying on `</assistant>`-based stopping was silently running longer than intended. Regression-tested in `tests/test_generation.py`.
 
-Not fixed silently, not hidden — the bug, the fix, and the corrected (still real) held-out result are all documented here, same discipline as every other finding in this project. `ROADMAP_NLP_PLATFORM.md` is updated to reflect the corrected picture.
+**A direct test of "more budget," not an assumption**: rather than guess whether more data/steps would close the generalization gap, the same recipe was re-run scaled up 4×/6× — 12,000 train examples (from 3,000), 2400 SFT steps (from 400), same architecture, same config otherwise. Training perplexity improved dramatically (60.5→**7.40**, vs. the original run's 60.5→49.7). Real held-out evaluation, same 200 test examples, same metric:
+
+| Run | Model CER | Model WER | Exact match | No-op baseline CER |
+|---|---|---|---|---|
+| Original (400 steps, 3K examples) | 1.23 | 1.42 | 0/200 | 0.028 |
+| Scaled up (2400 steps, 12K examples) | **0.62** | **0.89** | 1/200 | 0.028 |
+
+**Honest read**: scaling up helped substantially — CER roughly halved, and the failure mode qualitatively changed from pure degenerate repetition (`"stant> In addition, stant>..."`) to recognizable, topically-on-target text with real remaining spelling/grammar errors (e.g. `"Attactions Psycologicals fors for example to theories can bed astic, existential, or social."` for a source about attractions/psychology/conspiracy theories — wrong in detail, but clearly *trying* to do the task, not hallucinating something unrelated). **But it still does not beat the no-op baseline** — CER 0.62 is still ~22× worse than doing nothing. Some examples (especially Khmer) still fall into repetition loops. The honest conclusion isn't "fixed" — it's "more budget measurably narrows the gap without closing it," which is real, useful information for anyone deciding whether to keep scaling this specific approach (more data/steps) versus trying a different one (e.g. a larger backbone, or an architecture change) for this task.
+
+Not fixed silently, not hidden — the bug, the fix, and both the corrected and scaled-up held-out results are all documented here, same discipline as every other finding in this project. `ROADMAP_NLP_PLATFORM.md` is updated to reflect the corrected picture.
 
 ## Running tests
 
