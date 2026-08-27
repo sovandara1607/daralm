@@ -1,29 +1,4 @@
 #!/usr/bin/env python
-"""Diagnostic: can the SFT recipe overfit a tiny, fixed grammar-correction set?
-
-Same logic as `scripts/overfit_test.py` (Phase 5's "if the model can't
-overfit a tiny dataset, assume a bug/ceiling before spending more
-compute" gate), now applied to the specific failure found in the real
-grammar-correction run documented in `README.md`: training loss looked
-healthy (perplexity 60.5->49.7) but real generation-based evaluation
-(CER/WER against a no-op baseline) showed the model performing *worse
-than doing nothing*.
-
-This answers one specific, actionable question before Stage 2 item 4
-(structured JSON generation) is attempted: was that failure "needs more
-training budget" (recoverable — memorize a handful of examples with heavy
-overfitting, and the recipe clearly *can* learn this task, just wasn't
-given enough of it) or "a harder ceiling" (can't even memorize a tiny,
-fixed set — the SFT-for-generation approach itself needs rethinking,
-independent of dataset size).
-
-Same deliberate deviation as Phase 5's script: train and eval use the
-*same* tiny set, because overfitting-capability is exactly what's being
-measured here, not generalization.
-
-Usage:
-    python scripts/overfit_test_grammar.py --n-examples 16 --max-steps 800
-"""
 
 from __future__ import annotations
 
@@ -48,15 +23,7 @@ from daralm.utils.seed import set_seed  # noqa: E402
 
 logger = get_logger(__name__)
 
-# Pass criterion: after heavy overfitting, the model's average CER on its
-# OWN memorized training set must land meaningfully below the no-op
-# baseline's CER on that same tiny set (mirroring the comparison the real
-# evaluation already uses) — proof the mechanism can drive toward the
-# right answer given enough targeted signal, not just proof loss went
-# down (which the real failed run already showed is insufficient on its
-# own). A relative threshold, not an absolute one, for the same reason
-# scripts/overfit_test.py uses a relative loss-drop threshold: fair across
-# whatever specific 16 sentences get sampled.
+# Required CER improvement after overfitting the training set.
 MAX_ACCEPTABLE_CER_VS_BASELINE_RATIO = 0.5
 
 

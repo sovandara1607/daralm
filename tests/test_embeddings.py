@@ -12,8 +12,6 @@ from daralm.model.embeddings import (
     rotate_half,
 )
 
-# --- TokenEmbedding ---------------------------------------------------------
-
 
 def test_token_embedding_output_shape():
     emb = TokenEmbedding(vocab_size=100, hidden_size=16)
@@ -30,9 +28,6 @@ def test_token_embedding_is_scaled_by_sqrt_hidden_size():
     scaled_out = emb(input_ids)
     raw_out = emb.embedding(input_ids)
     assert torch.allclose(scaled_out, raw_out * (hidden_size**0.5))
-
-
-# --- RotaryEmbedding / rotate_half ------------------------------------------
 
 
 def test_rotary_embedding_output_shapes():
@@ -60,7 +55,6 @@ def test_rotate_half_shape_preserved():
 
 def test_rotate_half_known_values():
     x = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
-    # first half [1,2], second half [3,4] -> [-3,-4, 1, 2]
     expected = torch.tensor([[-3.0, -4.0, 1.0, 2.0]])
     assert torch.equal(rotate_half(x), expected)
 
@@ -77,8 +71,6 @@ def test_apply_rotary_pos_emb_preserves_shape():
 
 
 def test_rope_preserves_vector_norm():
-    # Rotation should not change a vector's length — a basic correctness
-    # check that this is really a rotation, not an arbitrary transform.
     batch, heads, seq_len, head_dim = 1, 1, 5, 8
     torch.manual_seed(0)
     q = torch.randn(batch, heads, seq_len, head_dim)
@@ -91,13 +83,7 @@ def test_rope_preserves_vector_norm():
 
 
 def test_rope_dot_product_depends_only_on_relative_position():
-    """The defining property of RoPE: after rotation, (rotated_q_i . rotated_k_j)
-    depends only on (i - j), not on the absolute positions i, j themselves.
-
-    We rotate the *same* q, k vectors at two different absolute position
-    pairs that share the same offset (0, 2) and (5, 7) — both have
-    relative offset 2 — and check the resulting dot products match.
-    """
+    """The defining property of RoPE: after rotation, (rotated_q_i."""
     head_dim = 8
     torch.manual_seed(0)
     q_vec = torch.randn(1, 1, 1, head_dim)

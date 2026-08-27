@@ -1,9 +1,4 @@
-"""Tests for daralm.model.attention — CausalSelfAttention.
-
-Per spec section 16: output dimensions, causal masking, and — the most
-important property — that a position's output genuinely has no access to
-future tokens.
-"""
+"""Tests for daralm.model.attention — CausalSelfAttention."""
 
 from __future__ import annotations
 
@@ -35,9 +30,7 @@ def test_output_shape_matches_input():
 
 def test_rejects_hidden_size_not_divisible_by_heads():
     with pytest.raises(ValueError):
-        CausalSelfAttention(
-            hidden_size=30, num_attention_heads=4, max_position_embeddings=32
-        )
+        CausalSelfAttention(hidden_size=30, num_attention_heads=4, max_position_embeddings=32)
 
 
 @pytest.mark.parametrize("batch_size", [1, 2, 8])
@@ -63,19 +56,11 @@ def test_causal_mask_is_lower_triangular():
     mask = attn.causal_mask
     assert mask.shape == (16, 16)
     assert torch.equal(mask, torch.tril(torch.ones(16, 16, dtype=torch.bool)))
-    # Position 0 can only attend to itself; position 3 can attend to 0..3.
     assert mask[0].sum().item() == 1
     assert mask[3].sum().item() == 4
 
 
 def test_no_access_to_future_tokens():
-    """The defining causal property: changing a *future* token must not
-    change an earlier position's output at all.
-
-    We run the same attention module on two inputs that are identical up
-    to position `t`, but differ afterward, and check outputs at position
-    `t` (and everything before it) are exactly the same.
-    """
     torch.manual_seed(0)
     attn, rope = _make_attention(hidden_size=32, num_heads=4, max_pos=16, dropout=0.0)
     attn.eval()  # disable dropout for a deterministic comparison
@@ -92,11 +77,7 @@ def test_no_access_to_future_tokens():
         out_a, _ = attn(x_a, cos, sin)
         out_b, _ = attn(x_b, cos, sin)
 
-    # Positions before the cutoff must be unaffected by the perturbation.
     assert torch.allclose(out_a[:, :cutoff, :], out_b[:, :cutoff, :], atol=1e-6)
-    # Sanity check the test itself is meaningful: positions at/after the
-    # cutoff (which now see different inputs at their own position) should
-    # generally differ.
     assert not torch.allclose(out_a[:, cutoff:, :], out_b[:, cutoff:, :], atol=1e-6)
 
 

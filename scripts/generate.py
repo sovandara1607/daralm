@@ -1,15 +1,5 @@
 #!/usr/bin/env python
-"""Generate text from a trained DaraLM checkpoint.
-
-Usage:
-    python scripts/generate.py \\
-        --checkpoint checkpoints/daralm-tiny/best \\
-        --tokenizer checkpoints/tokenizer/unigram.model \\
-        --prompt "Cambodia is" \\
-        --temperature 0.8 \\
-        --top-p 0.9 \\
-        --max-new-tokens 100
-"""
+"""Generate text from a trained DaraLM checkpoint."""
 
 from __future__ import annotations
 
@@ -50,9 +40,7 @@ def main() -> None:
 
     tokenizer = DaraLMTokenizer.from_pretrained(args.tokenizer)
 
-    # The checkpoint's saved config is the source of truth for the model's
-    # architecture — we don't ask the user to separately specify it and
-    # risk a mismatch with what was actually trained.
+    # The checkpoint config defines the model architecture.
     config_path = args.checkpoint / "config.yaml"
     if not config_path.exists():
         raise FileNotFoundError(

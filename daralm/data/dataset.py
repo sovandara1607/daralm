@@ -1,15 +1,3 @@
-"""Train/validation/test splitting, plus raw-text and tokenized dataset wrappers.
-
-This covers the last two stages of the pipeline in spec section 6:
-
-    ... -> Dedup -> Split -> Tokenizer -> Token IDs -> Sequence Packing -> Training Dataset
-
-`split_dataset` runs the split. `TextDataset` is a thin wrapper over cleaned
-records for iteration/inspection. `PackedTokenDataset` (Phase 4) is the
-tokenized, sequence-packed `torch.utils.data.Dataset` an actual training
-`DataLoader` consumes.
-"""
-
 from __future__ import annotations
 
 import random
@@ -38,26 +26,10 @@ def split_dataset(
     test_ratio: float = 0.05,
     seed: int = 42,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Shuffle and split `records` into train/val/test sets.
-
-    Splitting happens *after* deduplication so no document (or a near-copy
-    of it) can leak across splits, and *before* tokenization, so the split
-    boundary is defined on documents, not on token sequences that might
-    otherwise straddle a boundary.
-
-    Args:
-        records: Cleaned, deduplicated records to split.
-        train_ratio, val_ratio, test_ratio: Must sum to 1.0.
-        seed: Shuffle seed, recorded with the experiment for reproducibility.
-
-    Raises:
-        ValueError: if the ratios don't sum to 1.0, or `records` is empty.
-    """
+    """Shuffle and split `records` into train/val/test sets."""
     total_ratio = train_ratio + val_ratio + test_ratio
     if abs(total_ratio - 1.0) > _RATIO_TOLERANCE:
-        raise ValueError(
-            f"train_ratio + val_ratio + test_ratio must sum to 1.0, got {total_ratio}"
-        )
+        raise ValueError(f"train_ratio + val_ratio + test_ratio must sum to 1.0, got {total_ratio}")
     if not records:
         raise ValueError("Cannot split an empty dataset")
 
@@ -76,13 +48,6 @@ def split_dataset(
 
 
 class TextDataset:
-    """A minimal in-memory wrapper over cleaned {"text","language","source"} records.
-
-    Not a `torch.utils.data.Dataset` (no tokenization has happened yet) —
-    just enough to load a cleaned split from disk and iterate/index into it
-    for inspection, stats, or feeding into the tokenizer trainer (Phase 2).
-    """
-
     def __init__(self, records: list[dict[str, Any]]) -> None:
         self._records = records
 
@@ -98,40 +63,7 @@ class TextDataset:
 
 
 class PackedTokenDataset(Dataset):
-    """Tokenized, sequence-packed dataset for causal LM training.
-
-    Every document is tokenized and wrapped in `<bos> ... <eos>`, and all
-    documents are concatenated into one long token stream, which is then
-    cut into non-overlapping `block_size`-length chunks. This is "sequence
-    packing": rather than padding every document up to the batch's longest
-    one (wasteful — most of our Wikipedia articles are far longer than
-    `block_size` anyway, and short documents would be mostly padding), we
-    pack tokens from many documents back to back so every training example
-    is 100% real content, no padding at all.
-
-    One consequence worth knowing: a single packed example can span the
-    boundary between two unrelated documents (document A's `<eos>`
-    immediately followed by document B's `<bos>`). The model has no special
-    signal for this beyond the token IDs themselves — this is standard
-    practice for LLM pretraining (GPT-2/3, LLaMA all pack this way), not an
-    oversight.
-
-    Each item is a single `block_size`-length tensor, not a separate
-    (input, label) pair — `daralm.model.transformer.DaraLMTransformer.forward`
-    shifts internally when called as `model(batch, labels=batch)` (the same
-    convention Hugging Face's `labels=input_ids` uses). The trade-off: the
-    very last position in each block has no next-token target and
-    contributes no loss (its target would be the first token of the
-    *next* block, which we deliberately don't fetch, to keep blocks
-    non-overlapping and the API simple) — a small, known inefficiency
-    (1/block_size of positions), not a bug.
-
-    At this project's current corpus scale (~2,700 training documents),
-    packing happens in memory at construction time. Pre-tokenizing once and
-    caching the token stream to `data/tokenized/` is a natural upgrade once
-    corpus size makes re-tokenizing on every run too slow — not needed yet,
-    so not built yet.
-    """
+    """Tokenized, sequence-packed dataset for causal LM training."""
 
     def __init__(
         self,
@@ -174,29 +106,6 @@ class PackedTokenDataset(Dataset):
 
 
 class InstructionDataset(Dataset):
-    """Tokenized instruction/response pairs for supervised fine-tuning (Phase 9).
-
-    Unlike `PackedTokenDataset`, examples are *not* packed together — each
-    instruction/response pair is padded on its own up to `block_size`
-    rather than concatenated with its neighbors. Packing base-pretraining
-    documents back to back is fine because next-token prediction doesn't
-    care about document boundaries; packing instruction examples together
-    would actively teach the model that one conversation's `<eos>` is
-    immediately followed by an unrelated next conversation's `<user>` turn
-    — exactly the pattern instruction-tuning should discourage, not
-    reinforce.
-
-    Loss masking is the other real difference from base pretraining: each
-    item is an `(input_ids, labels)` pair, not one tensor. `labels` holds
-    `pad_token_id` (cross-entropy's `ignore_index`) at every *prompt*
-    position — the model isn't scored on predicting the instruction it was
-    given, only on generating a good response to it — and the real token
-    ID at every *response* position. This needs zero changes to
-    `DaraLMTransformer.forward`, which already accepts `input_ids` and
-    `labels` as independent tensors; base pretraining just always happens
-    to call it with `labels is input_ids`.
-    """
-
     def __init__(
         self,
         examples: list[dict[str, Any]],
@@ -218,15 +127,13 @@ class InstructionDataset(Dataset):
             total_len = len(prompt_ids) + len(response_ids)
 
             if total_len > block_size:
-                # Dropped, not truncated: truncating could cut the prompt
-                # mid-sentence or the response before its <eos>, either of
-                # which would corrupt what the model is being taught. With
-                # a small dataset we can afford to just skip the outlier.
+                # Do not truncate a supervised response mid-answer.
                 skipped_too_long += 1
                 continue
 
             pad_len = block_size - total_len
             input_ids = prompt_ids + response_ids + [pad_id] * pad_len
+            # Ignore the prompt and padding when computing response loss.
             labels = [pad_id] * len(prompt_ids) + response_ids + [pad_id] * pad_len
 
             self._input_ids.append(torch.tensor(input_ids, dtype=torch.long))
@@ -250,30 +157,6 @@ class InstructionDataset(Dataset):
 
 
 class ClassificationDataset(Dataset):
-    """Tokenized `{"text", "label"}` pairs for training a
-    `daralm.model.classification_head.ClassificationHead` on top of a
-    `DaraLMTransformer` backbone — the roadmap's first classification-family
-    capability (`ROADMAP_NLP_PLATFORM.md`).
-
-    Two real differences from `InstructionDataset`, both deliberate:
-
-    1. **Truncated, not skipped, when longer than `block_size`.** SFT
-       drops over-long examples because truncating could cut a response
-       before its `<eos>` — actively corrupting what the model is taught
-       to generate. Classification has no such risk: using only the first
-       `block_size` tokens of a long document still gives the classifier
-       real signal to pool from (the last-real-token pooling strategy in
-       `ClassificationHead` just pools from wherever the truncated
-       sequence ends instead of the true document end) — the standard
-       practice for text classifiers, not a shortcut specific to this
-       project.
-    2. **Explicit `label2id`, built from `label_list`, not discovered from
-       the data.** An unrecognized label raises immediately (`ValueError`)
-       rather than silently becoming a new, unplanned class — the same
-       "fail loudly on a typo" discipline `ModelConfig`'s `extra="forbid"`
-       already applies to configs, applied here to label spelling.
-    """
-
     def __init__(
         self,
         records: list[dict[str, Any]],

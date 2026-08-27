@@ -1,25 +1,3 @@
-"""ModelService — owns one loaded model + tokenizer and does the actual work.
-
-This is the layer between HTTP (api.routes) and the library code every
-earlier phase already built and tested (`daralm.model.transformer`,
-`daralm.tokenizer.tokenizer`, `daralm.inference.generator`). Routes never
-touch `DaraLMTransformer`/`DaraLMTokenizer` directly — they go through a
-`ModelService` instance, for two reasons:
-
-1. **Testability.** Loading a real checkpoint (tens of MB, seconds of I/O)
-   on every test would make the API test suite slow and would tie every
-   test's correctness to whatever happens to be trained on disk right now.
-   `ModelService.__init__` accepts an already-constructed model/tokenizer
-   directly, so tests build tiny fixtures (same pattern as
-   `tests/test_generation.py`) and never touch a real checkpoint.
-   `ModelService.from_checkpoint` is the *only* place real disk I/O
-   happens, used solely by `api.main`'s startup.
-2. **One process-wide model, loaded once.** Loading a checkpoint per
-   request would be needlessly slow and would defeat the point of a long-
-   running service — `api.main` builds exactly one `ModelService` at
-   startup and every request reuses it.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -63,14 +41,7 @@ class ModelService:
         checkpoint_dir: str | Path,
         tokenizer_path: str | Path,
     ) -> ModelService:
-        """Load a model for serving: config -> tokenizer -> weights.
-
-        Fails loudly (via the existing `ModelConfig.from_yaml` / tokenizer
-        `FileNotFoundError` / `load_checkpoint`'s own checks) rather than
-        starting a service that would 500 on the first real request — a
-        bad config, missing tokenizer, or vocab-size mismatch is a startup
-        error, not a runtime one.
-        """
+        """Load a model for serving: config -> tokenizer -> weights."""
         config = ModelConfig.from_yaml(config_path)
         tokenizer = DaraLMTokenizer.from_pretrained(tokenizer_path)
         if tokenizer.vocab_size != config.architecture.vocab_size:
@@ -81,15 +52,31 @@ class ModelService:
 
         device = get_device()
         model = DaraLMTransformer(config.architecture, pad_token_id=tokenizer.pad_id)
-        # map_location deliberately left at load_checkpoint's default ("cpu"),
-        # matching scripts/train.py and scripts/train_sft.py — torch.set_rng_state
-        # only accepts a CPU ByteTensor, so loading the checkpoint's saved RNG
-        # state directly onto an MPS/CUDA device crashes. `model.load_state_dict`
-        # copies values in place regardless of the source tensor's device, so
-        # the weights still end up on `device` once `ModelService.__init__`
-        # calls `model.to(device)` below — this is a load-then-move ordering,
-        # not a "load straight to the target device" one.
-        checkpoint_info = load_checkpoint(checkpoint_dir, model, tokenizer_path=tokenizer_path)
+        # map_location deliberately left at load_checkpoint's default ("cpu").
+        checkpoint_path = Path(checkpoint_dir)
+        release_path = (
+            checkpoint_path / "pytorch_model.pt" if checkpoint_path.is_dir() else checkpoint_path
+        )
+        if (checkpoint_path / "checkpoint.pt").exists():
+            # Resumable training checkpoint: retain the strict tokenizer fingerprint.
+            checkpoint_info = load_checkpoint(checkpoint_path, model, tokenizer_path=tokenizer_path)
+        elif release_path.name == "pytorch_model.pt" and release_path.exists():
+            release = torch.load(release_path, map_location="cpu", weights_only=True)
+            model.load_state_dict(release["model_state_dict"])
+            checkpoint_info = {
+                "step": release.get("step"),
+                "tokens_processed": release.get("tokens_processed", 0),
+                "config": release.get("config", {}),
+            }
+            logger.info(
+                "Loaded inference release from %s (step=%s)",
+                release_path,
+                checkpoint_info["step"],
+            )
+        else:
+            raise FileNotFoundError(
+                f"No checkpoint.pt or pytorch_model.pt found at {checkpoint_path}"
+            )
         logger.info(
             "Loaded %s from %s (step=%d) on %s",
             config.model_name,
@@ -106,7 +93,6 @@ class ModelService:
         )
 
     def model_info(self) -> dict:
-        """Everything GET /v1/model reports — read from the config/model already in memory."""
         arch = self.config.architecture
         return {
             "model_name": self.config.model_name,
@@ -122,17 +108,7 @@ class ModelService:
         }
 
     def tokenize(self, text: str, add_bos: bool, add_eos: bool) -> dict:
-        """Token IDs plus their human-readable subword pieces, kept aligned.
-
-        `DaraLMTokenizer.tokenize()` (piece strings) and `.encode()` (IDs)
-        don't naturally align once `add_bos`/`add_eos` are requested —
-        `encode()` prepends/appends the special-token ID, but the raw piece
-        list from SentencePiece never included those tokens to begin with.
-        Prepending/appending the literal `<bos>`/`<eos>` strings here keeps
-        `tokens` and `token_ids` the same length and index-aligned, which
-        matters for a debugging endpoint whose whole point is inspecting
-        exactly what the model will see.
-        """
+        """Token IDs plus their human-readable subword pieces, kept aligned."""
         pieces = self.tokenizer.tokenize(text)
         ids = self.tokenizer.encode(text, add_bos=add_bos, add_eos=add_eos)
         if add_bos:
@@ -151,16 +127,7 @@ class ModelService:
         repetition_penalty: float,
         stop_on_eos: bool,
     ) -> dict:
-        """Run generation off the event loop.
-
-        `generate()` is synchronous, CPU/MPS-bound PyTorch work — calling
-        it directly inside an `async def` route would block the whole
-        event loop (and therefore every other concurrent request) for the
-        entire generation. `run_in_threadpool` runs it in a worker thread
-        instead, which is the standard fix for exactly this class of
-        problem (any synchronous, blocking call inside async code) rather
-        than something specific to model inference.
-        """
+        """Run generation off the event loop."""
         prompt_len = len(self.tokenizer.encode(prompt, add_bos=True, add_eos=False))
         full_text = await run_in_threadpool(
             generate,
@@ -178,11 +145,7 @@ class ModelService:
         generated_len = len(full_ids) - prompt_len
         return {
             "generated_text": full_text,
-            # Not exactly max_new_tokens when stop_on_eos triggers early, or
-            # when re-tokenizing the decoded text doesn't perfectly round-trip
-            # to the same ID count SentencePiece produced during generation
-            # (whitespace normalization can shift token boundaries slightly)
-            # — an honest re-measurement, not the requested cap echoed back.
+            # EOS and decoded-text retokenization can reduce this count.
             "tokens_generated": max(generated_len, 0),
         }
 
@@ -195,14 +158,6 @@ class ModelService:
         top_k: int,
         repetition_penalty: float,
     ) -> dict:
-        """Run chat-templated generation off the event loop — same
-        `run_in_threadpool` reasoning as `generate()` above.
-
-        Unlike `generate()`, no prompt-length subtraction is needed:
-        `generate_chat()` already returns only the assistant's response
-        text (the chat-template prompt is stripped before it's returned),
-        so `tokens_generated` is a direct encode-and-count, not a diff.
-        """
         response_text = await run_in_threadpool(
             generate_chat,
             self.model,

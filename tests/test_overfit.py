@@ -1,14 +1,3 @@
-"""Regression test for the Phase 5 sanity gate: can the model overfit at all?
-
-Runs the same procedure as `scripts/overfit_test.py` (train on a tiny fixed
-set, verify loss collapses and greedy generation reproduces it) at a much
-smaller synthetic scale, so it runs in well under a second as part of the
-normal test suite. This is a permanent trip-wire: if a future change to the
-model/trainer breaks the ability to overfit, this test catches it —
-matching spec section 19's framing that this capability is a precondition
-for everything after it, not a one-off manual check.
-"""
-
 from __future__ import annotations
 
 import torch
@@ -22,10 +11,6 @@ from daralm.tokenizer.tokenizer import DaraLMTokenizer
 from daralm.tokenizer.train import train_sentencepiece
 from daralm.training.trainer import Trainer
 
-# A handful of short, distinct sentences — enough variety that memorizing
-# them isn't trivially the same as memorizing one repeated string, but few
-# and short enough that a 2-layer, 32-dim model can plausibly memorize them
-# within a few hundred steps.
 _SENTENCES = [
     "the quick brown fox jumps over the lazy dog",
     "a journey of a thousand miles begins with a single step",
@@ -88,9 +73,6 @@ def test_model_can_overfit_a_tiny_fixed_dataset(tmp_path_factory, tmp_path):
         checkpoint_dir=tmp_path / "checkpoints",
         tokenizer_path=tmp_path_factory.mktemp("tok2") / "placeholder.model",
     )
-    # save_checkpoint would fingerprint tokenizer_path's bytes; this test
-    # never saves (save_interval == max_steps is set but train() will still
-    # save once at the end) — give it a real, if content-irrelevant, file.
     (trainer.tokenizer_path).write_bytes(b"placeholder")
 
     initial_loss, _ = compute_perplexity(model, trainer.val_loader, device)

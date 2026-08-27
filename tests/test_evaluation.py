@@ -15,8 +15,6 @@ from daralm.model.transformer import DaraLMTransformer
 from daralm.tokenizer.tokenizer import DaraLMTokenizer
 from daralm.tokenizer.train import train_sentencepiece
 
-# --- token_match_rate --------------------------------------------------
-
 
 def test_token_match_rate_identical_sequences():
     assert token_match_rate([1, 2, 3], [1, 2, 3]) == 1.0
@@ -35,11 +33,7 @@ def test_token_match_rate_empty_reference():
 
 
 def test_token_match_rate_generated_shorter_than_reference_is_penalized():
-    # Only 1 of 4 reference positions was even reached.
     assert token_match_rate([1], [1, 2, 3, 4]) == pytest.approx(0.25)
-
-
-# --- compute_perplexity -----------------------------------------------
 
 
 def _tiny_model_and_loader():
@@ -82,9 +76,6 @@ def test_compute_perplexity_empty_loader_raises():
         compute_perplexity(model, empty_loader, torch.device("cpu"))
 
 
-# --- check_memorization --------------------------------------------------
-
-
 @pytest.fixture(scope="module")
 def tiny_tokenizer(tmp_path_factory):
     corpus_dir = tmp_path_factory.mktemp("eval_corpus")
@@ -125,7 +116,6 @@ def test_check_memorization_skips_short_documents(tiny_model, tiny_tokenizer):
 
 
 def test_check_memorization_caps_reference_length(tiny_model, tiny_tokenizer):
-    # A long, repetitive document so tokenization yields far more than the cap.
     long_doc = "the quick brown fox jumps over the lazy dog. " * 50
     results = check_memorization(
         tiny_model, tiny_tokenizer, [long_doc], min_tokens=5, max_reference_tokens=10

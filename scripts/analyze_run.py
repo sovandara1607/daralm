@@ -1,16 +1,4 @@
 #!/usr/bin/env python
-"""Analyze a completed (or in-progress) training run: loss curves, throughput,
-memory, and generation quality (spec section 28, Phase 6's explicit ask).
-
-Reads `history.json` (written by `daralm.training.trainer.Trainer`) for the
-quantitative timeline, and runs generation from the best checkpoint for a
-qualitative read — the two together are what "analyze this run" means; loss
-curves alone can't tell you whether the model produces anything reasonable,
-and generation samples alone can't tell you whether training was efficient.
-
-Usage:
-    python scripts/analyze_run.py --checkpoint-dir checkpoints/daralm-10m
-"""
 
 from __future__ import annotations
 
@@ -94,7 +82,6 @@ def main() -> None:
     device = get_device()
     print_summary(summary, get_device_name(device))
 
-    # --- Generation quality ---
     best_dir = args.checkpoint_dir / "best"
     tokenizer = DaraLMTokenizer.from_pretrained(args.tokenizer)
     config = ModelConfig.from_yaml(best_dir / "config.yaml")

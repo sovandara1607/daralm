@@ -1,17 +1,5 @@
 #!/usr/bin/env python
-"""Phase 8: consolidated evaluation report across every trained checkpoint.
-
-Runs the full spec section 15 checklist — language modeling metrics,
-fixed-prompt generation quality, memorization, overfitting — uniformly
-across DaraLM-Tiny, DaraLM-10M, and DaraLM-50M, and writes one comparable
-report. This is the point of the phase: not any single new number, but
-being able to look at every model trained so far side by side, on the
-exact same measurements.
-
-Usage:
-    python scripts/evaluate.py
-    python scripts/evaluate.py --checkpoints checkpoints/daralm-10m checkpoints/daralm-50m
-"""
+"""Phase 8: consolidated evaluation report across every trained checkpoint."""
 
 from __future__ import annotations
 
@@ -72,9 +60,12 @@ def print_report(report: dict) -> None:
         ppl = hist.get("final_perplexity")
         mem_ratio = result["memorization"]["match_rate_vs_chance"]
         overfit_short = (
-            "OK" if "no overfitting" in result["overfitting"]["verdict"]
-            else "WATCH" if "watch" in result["overfitting"]["verdict"]
-            else "?!" if "early overfitting" in result["overfitting"]["verdict"]
+            "OK"
+            if "no overfitting" in result["overfitting"]["verdict"]
+            else "WATCH"
+            if "watch" in result["overfitting"]["verdict"]
+            else "?!"
+            if "early overfitting" in result["overfitting"]["verdict"]
             else "n/a"
         )
         print(

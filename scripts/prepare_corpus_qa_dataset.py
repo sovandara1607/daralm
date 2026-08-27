@@ -1,25 +1,4 @@
 #!/usr/bin/env python
-"""Build a corpus-grounded, closed-book QA dataset — real question/answer
-pairs extracted directly from `data/cleaned/*.jsonl` (`daralm.data.corpus_qa`),
-not sourced externally and not template-generated from scratch like the
-grammar/JSON datasets.
-
-Why closed-book: no context is given at inference time (see
-`daralm/data/corpus_qa.py`'s module docstring for the full reasoning) —
-this tests whether SFT can surface knowledge the base model already
-picked up during pretraining on this exact corpus, as opposed to
-Alpaca-style instructions that assume broad world knowledge a ~29M-token
-pretraining corpus almost certainly didn't provide enough exposure to
-learn reliably.
-
-Splits are derived split-for-split (QA train from cleaned train, QA val
-from cleaned val, etc.) — same discipline as grammar correction — so no
-document from a base-pretraining val/test split leaks into this task's
-train split.
-
-Usage:
-    python scripts/prepare_corpus_qa_dataset.py
-"""
 
 from __future__ import annotations
 
@@ -37,10 +16,7 @@ logger = get_logger(__name__)
 
 
 def build_split(records: list[dict]) -> tuple[list[dict], int]:
-    """Extract every real (question, answer) pair this split's documents
-    yield. Returns (examples, skipped_count) — skipped is a real, honest
-    count of documents that didn't match the definitional pattern, not
-    silently dropped without a trace."""
+    """Extract every real (question, answer) pair this split's documents yield."""
     examples = []
     skipped = 0
     for record in records:
@@ -84,7 +60,12 @@ def main() -> None:
         match_rate = len(examples) / len(records) if records else 0.0
         logger.info(
             "Wrote %d examples to %s (%d/%d documents matched, %.1f%%, %d skipped)",
-            len(examples), output_path, len(examples), len(records), match_rate * 100, skipped,
+            len(examples),
+            output_path,
+            len(examples),
+            len(records),
+            match_rate * 100,
+            skipped,
         )
         summary[split_name] = len(examples)
 

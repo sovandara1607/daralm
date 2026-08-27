@@ -1,24 +1,4 @@
-"""Configuration schema for DaraLM model architecture and training.
-
-This module is the single source of truth for what constitutes a *valid*
-model configuration. Every model size (tiny, 10m, 50m, 150m, 500m, ...) is
-expressed as a YAML file validated against these schemas — no architecture
-parameters are ever hard-coded into model code. That is what lets us swap
-`configs/tiny.yaml` for `configs/50m.yaml` without touching a line of
-Python once the Transformer itself is implemented (Phase 3).
-
-We use Pydantic (not plain dataclasses) specifically for two things a
-project like this needs from day one:
-
-1. Fail loudly on bad configs. `extra="forbid"` means a typo'd key like
-   `hiddne_size` raises a clear ``ValidationError`` instead of being
-   silently ignored — you find out immediately, not three hours into a
-   training run.
-2. Cross-field validation. E.g. `hidden_size` must be evenly divisible by
-   `num_attention_heads` (each head gets an equal slice of the hidden
-   dimension) — a `model_validator` catches this before it becomes a
-   confusing shape-mismatch error deep inside attention.
-"""
+"""Configuration schema for DaraLM model architecture and training."""
 
 from __future__ import annotations
 
@@ -30,13 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class ArchitectureConfig(BaseModel):
-    """Transformer architecture hyperparameters.
-
-    These fully determine the model's shape and parameter count. Nothing
-    here is specific to any one model size — `configs/tiny.yaml` and
-    `configs/50m.yaml` populate the exact same fields with different
-    numbers.
-    """
+    """Transformer architecture hyperparameters."""
 
     model_config = {"extra": "forbid"}
 
@@ -51,14 +25,7 @@ class ArchitectureConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_head_divisibility(self) -> ArchitectureConfig:
-        """hidden_size must split evenly across attention heads.
-
-        Multi-head attention slices the hidden dimension into
-        `num_attention_heads` equal chunks (`head_dim = hidden_size //
-        num_attention_heads`). If it doesn't divide evenly, that slicing is
-        undefined — better to reject the config now than to fail with a
-        cryptic tensor-shape error inside attention later.
-        """
+        """hidden_size must split evenly across attention heads."""
         if self.hidden_size % self.num_attention_heads != 0:
             raise ValueError(
                 f"hidden_size ({self.hidden_size}) must be divisible by "
@@ -69,14 +36,7 @@ class ArchitectureConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_head_dim_even(self) -> ArchitectureConfig:
-        """head_dim must be even — required by Rotary Position Embeddings (Phase 3).
-
-        RoPE rotates each head's vector by splitting it into two equal
-        halves (`daralm.model.embeddings.rotate_half`); an odd head_dim
-        can't be split evenly. Discovered while implementing Phase 3 and
-        added here so a bad config is rejected at load time, not deep
-        inside the attention forward pass.
-        """
+        """head_dim must be even — required by Rotary Position Embeddings (Phase 3)."""
         if self.head_dim % 2 != 0:
             raise ValueError(
                 f"head_dim (hidden_size / num_attention_heads = {self.head_dim}) must be "
@@ -91,22 +51,7 @@ class ArchitectureConfig(BaseModel):
 
 
 class TrainingConfig(BaseModel):
-    """Training-time hyperparameters and run orchestration.
-
-    One YAML drives the whole run (`python scripts/train.py --config
-    configs/tiny.yaml`) rather than splitting model hyperparameters and
-    run-orchestration settings (batch size, step counts, eval cadence)
-    across two separately-merged config files — a deliberate simplicity
-    choice: a second config layer would add a merge/precedence question
-    ("which file wins if both set `learning_rate`?") for no real benefit
-    at this project's scale.
-
-    `batch_size`, `max_steps`, `warmup_steps`, `eval_interval`, and
-    `save_interval` have no defaults — they're specific enough per-run
-    choices that a silently-inherited default (e.g. training running
-    "forever" because `max_steps` was forgotten) is worse than being forced
-    to state them explicitly in every config.
-    """
+    """Training-time hyperparameters and run orchestration."""
 
     model_config = {"extra": "forbid"}
 
@@ -142,26 +87,15 @@ class TrainingConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_warmup_within_max_steps(self) -> TrainingConfig:
-        """Warmup that never finishes (>= max_steps) means the run never
-        reaches its peak learning rate — almost certainly a config mistake
-        rather than an intended setup, so reject it rather than silently
-        training at a permanently-reduced LR.
-        """
         if self.warmup_steps >= self.max_steps:
             raise ValueError(
-                f"warmup_steps ({self.warmup_steps}) must be less than "
-                f"max_steps ({self.max_steps})"
+                f"warmup_steps ({self.warmup_steps}) must be less than max_steps ({self.max_steps})"
             )
         return self
 
 
 class ModelConfig(BaseModel):
-    """Top-level DaraLM configuration — the full contents of a config YAML.
-
-    Load and validate with :meth:`from_yaml`, e.g.::
-
-        config = ModelConfig.from_yaml("configs/50m.yaml")
-    """
+    """Top-level DaraLM configuration — the full contents of a config YAML."""
 
     model_config = {"extra": "forbid"}
 
@@ -172,14 +106,7 @@ class ModelConfig(BaseModel):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> ModelConfig:
-        """Load and validate a config from a YAML file.
-
-        Raises ``FileNotFoundError`` if the path doesn't exist, ``ValueError``
-        if the file is empty, and ``pydantic.ValidationError`` if the
-        contents don't match the schema. No error is ever swallowed —
-        configuration mistakes should surface immediately, not silently
-        produce a model with the wrong shape.
-        """
+        """Load and validate a config from a YAML file."""
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"Config file not found: {path}")

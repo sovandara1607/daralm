@@ -1,5 +1,3 @@
-"""Tests for the data pipeline: loader, preprocessing, dedup, split, packing."""
-
 from __future__ import annotations
 
 import pytest
@@ -19,8 +17,6 @@ from daralm.data.loader import load_jsonl, save_jsonl
 from daralm.data.preprocessing import compute_corpus_stats, process_document
 from daralm.tokenizer.tokenizer import DaraLMTokenizer
 from daralm.tokenizer.train import train_sentencepiece
-
-# --- loader ---------------------------------------------------------------
 
 
 def test_save_and_load_jsonl_roundtrip(tmp_path):
@@ -58,9 +54,6 @@ def test_load_jsonl_skips_blank_lines(tmp_path):
     path = tmp_path / "docs.jsonl"
     path.write_text('{"text": "a", "language": "en", "source": "s"}\n\n\n', encoding="utf-8")
     assert len(load_jsonl(path)) == 1
-
-
-# --- preprocessing ----------------------------------------------------------
 
 
 def test_process_document_keeps_valid_document():
@@ -120,9 +113,6 @@ def test_compute_corpus_stats_empty_records():
     assert stats["average_document_chars"] == 0.0
 
 
-# --- deduplication ----------------------------------------------------------
-
-
 def test_document_hash_ignores_case_punctuation_and_whitespace():
     assert document_hash("Hello,  World!") == document_hash("hello world")
 
@@ -130,7 +120,6 @@ def test_document_hash_ignores_case_punctuation_and_whitespace():
 def test_deduplicate_removes_exact_duplicates():
     records = [
         {"text": "Hello world", "language": "en", "source": "s"},
-        # near-identical to the record above after hash normalization
         {"text": "hello   world!!", "language": "en", "source": "s"},
         {"text": "Completely different text here", "language": "en", "source": "s"},
     ]
@@ -143,9 +132,6 @@ def test_deduplicate_empty_list():
     kept, duplicates = deduplicate([])
     assert kept == []
     assert duplicates == 0
-
-
-# --- dataset split ------------------------------------------------------
 
 
 def _make_records(n: int) -> list[dict]:
@@ -185,9 +171,6 @@ def test_split_dataset_is_reproducible_with_same_seed():
     assert [r["text"] for r in splits_a["train"]] == [r["text"] for r in splits_b["train"]]
 
 
-# --- TextDataset --------------------------------------------------------
-
-
 def test_text_dataset_len_and_getitem():
     records = _make_records(5)
     ds = TextDataset(records)
@@ -201,9 +184,6 @@ def test_text_dataset_from_jsonl(tmp_path):
     save_jsonl(records, path)
     ds = TextDataset.from_jsonl(path)
     assert len(ds) == 3
-
-
-# --- PackedTokenDataset ---------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -240,8 +220,6 @@ def test_packed_dataset_blocks_are_contiguous_non_overlapping(tiny_tokenizer):
     records = _text_records(50)
     block_size = 8
     ds = PackedTokenDataset(records, tiny_tokenizer, block_size=block_size)
-    # Concatenating consecutive blocks should reproduce a contiguous slice
-    # of the underlying token stream — i.e. no gaps, no overlap.
     block0 = ds[0]
     block1 = ds[1]
     manual_slice = ds._tokens[block_size : 2 * block_size]  # noqa: SLF001
@@ -250,8 +228,6 @@ def test_packed_dataset_blocks_are_contiguous_non_overlapping(tiny_tokenizer):
 
 
 def test_packed_dataset_contains_bos_eos_tokens(tiny_tokenizer):
-    # With short repeated documents, <bos>/<eos> should appear frequently
-    # in the packed stream (each document is wrapped in them).
     records = _text_records(50)
     ds = PackedTokenDataset(records, tiny_tokenizer, block_size=16)
     flat = ds._tokens.tolist()  # noqa: SLF001
@@ -280,9 +256,6 @@ def test_packed_dataset_works_with_dataloader(tiny_tokenizer):
     loader = DataLoader(ds, batch_size=4, shuffle=True)
     batch = next(iter(loader))
     assert batch.shape == (4, 8)
-
-
-# --- InstructionDataset (Phase 9) -------------------------------------
 
 
 def _instruction_examples(n: int) -> list[dict]:
@@ -315,21 +288,15 @@ def test_instruction_dataset_masks_prompt_and_supervises_response(tiny_tokenizer
     ds = InstructionDataset([example], tiny_tokenizer, block_size=100)
     input_ids, labels = ds[0]
 
-    # Every prompt-region label must be the pad/ignore_index — masked out.
     assert (labels[:prompt_len] == tiny_tokenizer.pad_id).all()
-    # At least one response-region label must be a real (non-pad) token —
-    # otherwise nothing would be supervised at all.
     response_region = labels[prompt_len:]
     assert (response_region != tiny_tokenizer.pad_id).any()
-    # Response-region labels must equal the corresponding input_ids (the
-    # model is being taught to predict exactly what's already there).
     assert torch.equal(input_ids[prompt_len:], labels[prompt_len:])
 
 
 def test_instruction_dataset_padding_is_masked(tiny_tokenizer):
     ds = InstructionDataset(_instruction_examples(1), tiny_tokenizer, block_size=100)
     input_ids, labels = ds[0]
-    # Whatever tail is padding in input_ids must also be masked in labels.
     pad_positions = input_ids == tiny_tokenizer.pad_id
     assert (labels[pad_positions] == tiny_tokenizer.pad_id).all()
 
@@ -366,14 +333,10 @@ def test_instruction_dataset_works_with_dataloader(tiny_tokenizer):
     ds = InstructionDataset(_instruction_examples(4), tiny_tokenizer, block_size=64)
     loader = DataLoader(ds, batch_size=2)
     batch = next(iter(loader))
-    # Default collation of 2-tuples -> a 2-element list of stacked tensors.
     assert isinstance(batch, list)
     assert len(batch) == 2
     assert batch[0].shape == (2, 64)
     assert batch[1].shape == (2, 64)
-
-
-# --- ClassificationDataset --------------------------------------------------
 
 
 def _classification_records(n: int, labels: tuple[str, ...] = ("en", "km")) -> list[dict]:
@@ -394,9 +357,6 @@ def test_classification_dataset_item_shapes(tiny_tokenizer):
 
 
 def test_classification_dataset_label2id_follows_label_list_order(tiny_tokenizer):
-    # label_list order defines label2id — "km" is index 0, "en" is index 1,
-    # deliberately not alphabetical, to prove the mapping follows the
-    # given list rather than some implicit sort.
     records = [
         {"text": "hello world this is a test sentence.", "label": "km"},
         {"text": "another different sentence here.", "label": "en"},
@@ -418,8 +378,6 @@ def test_classification_dataset_pads_short_examples(tiny_tokenizer):
 
 
 def test_classification_dataset_truncates_long_examples_instead_of_dropping(tiny_tokenizer):
-    # Unlike InstructionDataset, over-long examples are truncated, not
-    # skipped — the dataset should still have every record, just shortened.
     long_text = "hello world this is a test sentence."  # 24 tokens, measured
     ds = ClassificationDataset(
         [{"text": long_text, "label": "en"}], tiny_tokenizer, block_size=8, label_list=["en", "km"]

@@ -1,13 +1,4 @@
-"""Request/response schema for POST /v1/tokenize — spec section 26.
-
-Useful standalone, not just as a generate() implementation detail: Phase 9
-found a real tokenizer coverage gap (`<`/`>` characters falling back to
-`<unk>`) by inspecting `encode()`/`decode()` output directly. This endpoint
-exposes that same inspection over HTTP instead of requiring a Python
-console — e.g. for checking how a given piece of Khmer or English text (or
-a chat-template-wrapped prompt) actually gets tokenized before spending a
-generate() call on it.
-"""
+"""Request/response schema for POST /v1/tokenize."""
 
 from __future__ import annotations
 

@@ -11,8 +11,4 @@ router = APIRouter(tags=["observability"])
 
 @router.get("/metrics")
 def metrics() -> Response:
-    """No auth, no model dependency — deliberately reachable even before
-    the model finishes loading, so a scraper can tell the process is alive
-    during the (few-second) startup window `/health`'s 503 covers.
-    """
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

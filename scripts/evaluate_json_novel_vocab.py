@@ -1,25 +1,4 @@
 #!/usr/bin/env python
-"""Stress-test a structured-JSON fine-tune with real, recognizable words —
-a distribution-shift check, distinct from `scripts/evaluate_json.py`'s
-official test.
-
-Why this script still exists under v3: v1/v2's "novel vocab" stress test
-existed to catch a model that had memorized a *fixed* vocabulary instead
-of learning to copy — that failure mode is structurally impossible now
-(`daralm/data/structured_facts.py` v3 generates fresh, unbounded random
-strings for every single example, train or test, so there's no fixed
-pool left to memorize). What v3 *hasn't* tested yet: training used
-phonotactically-plausible but invented syllable-soup words
-(`_random_en_word`) — does the learned copy behavior transfer to real,
-recognizable English names/occupations/cities, a different surface
-distribution than anything seen in training? That's a genuine, distinct
-generalization question, so this script asks it.
-
-Usage:
-    python scripts/evaluate_json_novel_vocab.py \\
-        --config configs/50m-json.yaml \\
-        --checkpoint checkpoints/daralm-50m-json/best
-"""
 
 from __future__ import annotations
 
@@ -47,22 +26,41 @@ logger = get_logger(__name__)
 
 SCHEMA_KEYS = ("name", "age", "occupation", "city")
 
-# Real, recognizable English words — deliberately NOT the syllable-soup
-# style v3 trains on, to test whether copying generalizes across surface
-# distributions, not just across specific unseen strings.
 REAL_NAMES = [
-    "Alexander Hamilton", "Marie Curie", "Nelson Mandela", "Frida Kahlo",
-    "Leonardo da Vinci", "Rosa Parks", "Charles Darwin", "Amelia Earhart",
-    "Winston Churchill", "Ada Lovelace",
+    "Alexander Hamilton",
+    "Marie Curie",
+    "Nelson Mandela",
+    "Frida Kahlo",
+    "Leonardo da Vinci",
+    "Rosa Parks",
+    "Charles Darwin",
+    "Amelia Earhart",
+    "Winston Churchill",
+    "Ada Lovelace",
 ]
 REAL_OCCUPATIONS = [
-    "software developer", "graphic designer", "civil engineer", "data scientist",
-    "social worker", "flight attendant", "marine biologist", "urban planner",
-    "sound engineer", "yoga instructor",
+    "software developer",
+    "graphic designer",
+    "civil engineer",
+    "data scientist",
+    "social worker",
+    "flight attendant",
+    "marine biologist",
+    "urban planner",
+    "sound engineer",
+    "yoga instructor",
 ]
 REAL_CITIES = [
-    "Vancouver", "Amsterdam", "Melbourne", "Barcelona", "Montreal",
-    "Auckland", "Edinburgh", "Stockholm", "Zurich", "Kyoto",
+    "Vancouver",
+    "Amsterdam",
+    "Melbourne",
+    "Barcelona",
+    "Montreal",
+    "Auckland",
+    "Edinburgh",
+    "Stockholm",
+    "Zurich",
+    "Kyoto",
 ]
 
 
@@ -104,7 +102,7 @@ def main() -> None:
         city = rng.choice(REAL_CITIES)
         text = f"{name} is a {age}-year-old {occupation} living in {city}."
         instruction = (
-            'Extract the following fields as a JSON object with keys '
+            "Extract the following fields as a JSON object with keys "
             f'"name", "age", "occupation", "city": {text}'
         )
 

@@ -1,9 +1,3 @@
-"""POST /v1/chat — chat-templated generation, per spec section 27's
-"production architecture" direction. Not one of spec section 26's literal
-four endpoints — see api/schemas/chat.py's module docstring for why it
-wasn't built in Phase 10 and is built now instead.
-"""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends

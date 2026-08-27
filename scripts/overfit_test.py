@@ -1,25 +1,5 @@
 #!/usr/bin/env python
-"""The Phase 5 sanity gate: can DaraLM-Tiny overfit a tiny, fixed dataset?
-
-Spec sections 18-19: take several hundred examples, deliberately overfit
-them, and confirm training loss falls dramatically and the model starts
-reproducing patterns. "If the model cannot overfit a tiny dataset, assume
-there is a bug before increasing training compute" — this script's exit
-code (0 = pass, 1 = fail) is meant to be treated as exactly that gate.
-
-Deliberate deviation from every other training script in this project: the
-same tiny document set is used for both "train" and "val" here. Everywhere
-else (Phase 1's split_dataset, Phase 4's train.py), train/val separation is
-non-negotiable — mixing them would hide overfitting. Here, overfitting is
-literally the thing being tested for, so evaluating on the same data the
-model trained on is correct, not a bug: we're not asking "does this
-generalize" (Phase 4/6/7's question), we're asking "is this model even
-*capable* of driving its loss down and memorizing", a precondition for
-everything after it.
-
-Usage:
-    python scripts/overfit_test.py --config configs/tiny.yaml --n-examples 300
-"""
+"""The Phase 5 sanity gate: can DaraLM-Tiny overfit a tiny, fixed dataset?."""
 
 from __future__ import annotations
 
@@ -48,27 +28,6 @@ logger = get_logger(__name__)
 def _is_suitable_for_overfit_test(
     text: str, tokenizer: DaraLMTokenizer, max_unk_ratio: float = 0.02, max_pipe_ratio: float = 0.01
 ) -> bool:
-    """Filter out documents that are hard for reasons unrelated to memorization capacity.
-
-    Two real issues surfaced by running this test against the actual corpus:
-
-    1. MediaWiki's own table markup (`{| ... |- ... |}`, pipe-delimited) is
-       distinct from HTML and isn't stripped by `daralm.data.cleaner`'s
-       HTML-tag stripper (a real gap in the Phase 1 cleaner, noted here
-       rather than silently worked around — worth fixing there directly in
-       a future data-cleaning pass). A high density of "|" characters is a
-       cheap proxy for "this document is mostly leftover table markup".
-    2. A handful of documents contain small foreign-script fragments (e.g.
-       a Japanese place name) our Khmer+English tokenizer never saw during
-       training, which map to `<unk>` even in the *ground truth* — no
-       model could ever reproduce a token it's structurally impossible to
-       predict correctly.
-
-    Neither is a memorization-capability problem; both would corrupt this
-    specific diagnostic if left in. General-purpose robustness to messy
-    documents is what Phase 1 cleaning + a much larger corpus are for, not
-    what this sanity check is asking.
-    """
     if not text:
         return False
     if text.count("|") / len(text) > max_pipe_ratio:
@@ -80,27 +39,6 @@ def _is_suitable_for_overfit_test(
     return unk_ratio <= max_unk_ratio
 
 
-# Pass criteria. Calibrated against real runs on this corpus (see README's
-# Phase 5 section), not guessed blind. Two independent signals:
-#
-# 1. loss_drop_ratio >= 0.7 — "training loss falls significantly" (spec
-#    section 18), a scale/corpus-difficulty-agnostic relative measure. An
-#    absolute final-loss cutoff was tried first and dropped: it penalized
-#    a more diverse, harder-to-memorize random sample versus an accidental
-#    single-genre one, even though both showed the same underlying dynamic
-#    (loss still falling, just from a harder starting point) — a relative
-#    threshold is the fairer, more honest signal here.
-# 2. avg_match_rate >= 15x the random-chance baseline (1/vocab_size) for
-#    exact single-document reproduction via greedy decoding. This is a
-#    genuinely strict test — many of this corpus's short documents share a
-#    near-identical grammatical template (Cambodian administrative
-#    geography stubs) with different specific place names, so even a
-#    well-overfit model often produces an equally-plausible *different*
-#    completion. An absolute cutoff (e.g. 15%) turned out to be unrealistic
-#    at this model scale even under strong, verified overfitting evidence
-#    (perplexity 16,335 -> 15.9, a ~1000x reduction); comparing against the
-#    actual chance baseline is the principled way to judge "meaningfully
-#    better than random", rather than an arbitrary intuition-based number.
 MIN_LOSS_DROP_RATIO = 0.7
 MIN_MATCH_RATE_VS_CHANCE_MULTIPLE = 15
 
@@ -147,8 +85,6 @@ def main() -> None:
 
     config = ModelConfig.from_yaml(args.config)
     config.model_name = f"{config.model_name}-overfit-test"
-    # Override run-orchestration settings for this specific experiment —
-    # architecture is untouched, only how the run is conducted changes.
     config.training = config.training.model_copy(
         update={
             "max_steps": args.max_steps,
@@ -193,7 +129,6 @@ def main() -> None:
     )
 
     block_size = config.architecture.max_position_embeddings
-    # Same records for both — see module docstring for why that's correct here.
     overfit_dataset = PackedTokenDataset(overfit_records, tokenizer, block_size=block_size)
     logger.info("Packed into %d block(s) of size %d", len(overfit_dataset), block_size)
 

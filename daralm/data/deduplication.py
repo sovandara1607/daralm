@@ -1,20 +1,4 @@
-"""Exact document deduplication.
-
-We hash a normalized form of each document's text (lowercased, whitespace-
-collapsed, punctuation-stripped — for hashing purposes only, the stored
-`text` field is never mutated) and drop any document whose hash we've
-already seen. `\\w` in Python's `re` module is Unicode-aware by default, so
-stripping non-word characters for the hash key works correctly on Khmer
-text too, not just ASCII.
-
-This catches exact and near-exact duplicates (differing only in whitespace,
-case, or punctuation) cheaply, in one pass, with no extra dependency. It
-will NOT catch near-duplicates that differ in actual wording (e.g. two
-paraphrased copies of the same article) — that needs fuzzy techniques like
-MinHash/SimHash, which is more complexity than Phase 1 needs; noted here as
-a deliberate scope cut, not an oversight, and a natural place to extend
-later if duplicate analysis shows it's needed.
-"""
+"""Exact document deduplication."""
 
 from __future__ import annotations
 
@@ -40,11 +24,7 @@ def document_hash(text: str) -> str:
 
 
 def deduplicate(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
-    """Remove exact/near-exact duplicate documents.
-
-    Returns (kept_records, num_duplicates_removed). Order of `kept_records`
-    matches the first occurrence of each document in the input.
-    """
+    """Remove exact/near-exact duplicate documents."""
     seen: set[str] = set()
     kept: list[dict[str, Any]] = []
     duplicates = 0

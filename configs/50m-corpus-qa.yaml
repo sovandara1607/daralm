@@ -1,22 +1,3 @@
-# DaraLM-50M-CorpusQA — supervised fine-tune of DaraLM-50M Base on
-# corpus-grounded, closed-book QA (a user-directed experiment testing a
-# specific hypothesis: is the "stupid model" problem an SFT-data problem
-# or a pretraining-scale problem?).
-#
-# `architecture` is a byte-for-byte copy of configs/50m.yaml, same reason
-# as every other SFT config in this project: scripts/train_sft.py loads
-# Base's weights into a freshly constructed model built from *this*
-# config, so any architecture mismatch would make load_state_dict fail
-# loudly.
-#
-# Data: data/corpus_qa/instructions_{train,val,test}.jsonl, built by
-# scripts/prepare_corpus_qa_dataset.py — real (question, answer) pairs
-# extracted directly from the same Wikipedia corpus this model was
-# pretrained on (daralm/data/corpus_qa.py), not sourced externally like
-# Alpaca and not template-generated like grammar/JSON. Closed-book: no
-# context given at inference, unlike a typical QA/RAG setup — the point
-# is testing whether SFT can surface knowledge the base model already has
-# from pretraining, not testing retrieval-augmented answering.
 
 model_name: daralm-50m-corpus-qa
 tags: ["50m", "corpus-qa", "sft", "closed-book"]
@@ -34,17 +15,11 @@ architecture:
 training:
   precision: bf16
   optimizer: adamw
-  # Same low-LR reasoning as every other SFT config in this project: Base
-  # already has real language ability, SFT should nudge it toward this
-  # new task's format, not relearn from scratch.
   learning_rate: 0.00005
   weight_decay: 0.1
   gradient_clip: 1.0
   batch_size: 4
   gradient_accumulation_steps: 4
-  # 7,021 train examples / effective batch 16 = 439 steps/epoch; 1400
-  # steps ~= 3.2 epochs, matching the ~3-epoch budget already used for
-  # the scaled-up grammar/JSON runs rather than assumed.
   max_steps: 1400
   warmup_steps: 60
   eval_interval: 150

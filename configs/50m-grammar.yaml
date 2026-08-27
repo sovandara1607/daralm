@@ -1,14 +1,3 @@
-# DaraLM-50M-Grammar — supervised fine-tune of DaraLM-50M Base on synthetic
-# grammar/spelling correction (Stage 2, item 3 of ROADMAP_NLP_PLATFORM.md).
-#
-# `architecture` is a byte-for-byte copy of configs/50m.yaml, same reason as
-# configs/50m-instruct.yaml: scripts/train_sft.py loads Base's weights into
-# a freshly constructed model built from *this* config, so any architecture
-# mismatch would make load_state_dict fail loudly.
-#
-# Data: data/grammar/instructions_{train,val,test}.jsonl, built by
-# scripts/prepare_grammar_dataset.py — synthetic (corrupted, clean) pairs
-# from this project's own corpus, no external dataset.
 
 model_name: daralm-50m-grammar
 tags: ["50m", "grammar", "sft"]
@@ -26,28 +15,11 @@ architecture:
 training:
   precision: bf16
   optimizer: adamw
-  # Same low-LR reasoning as 50m-instruct.yaml: Base already has real
-  # language ability, SFT should nudge it toward this new task's format,
-  # not relearn from scratch on a comparatively small dataset.
   learning_rate: 0.00005
   weight_decay: 0.1
   gradient_clip: 1.0
-  # batch_size=4 reuses the exact shape already measured safe on this
-  # hardware for instruction-length examples (configs/50m-instruct.yaml) —
-  # grammar examples are shorter (single sentences vs multi-turn
-  # instructions), so this is a safety margin, not a re-measurement.
   batch_size: 4
   gradient_accumulation_steps: 4
-  # Scaled up 4x (3,000 -> 12,000 train examples; 400 -> 2400 steps) to
-  # test a specific finding, not just "more is better" by default: a
-  # memorization diagnostic (scripts/overfit_test_grammar.py) proved the
-  # recipe CAN learn this task (13/16 exact matches on a tiny fixed set),
-  # but the original 400-step/3,000-example run did not generalize to
-  # held-out text (CER 1.23 vs a 0.028 no-op baseline — see README). This
-  # run is a direct test of whether more data + more steps closes that
-  # gap, not an assumption that it will. 12,000 examples / effective batch
-  # 16 = 750 steps/epoch; 2400 steps = 3.2 epochs, roughly the same
-  # epoch-count-per-step-budget ratio as the original run scaled up.
   max_steps: 2400
   warmup_steps: 100
   eval_interval: 200

@@ -1,11 +1,4 @@
-"""Tests for the DaraLM FastAPI service (Phase 10, spec section 26).
-
-Uses FastAPI's `TestClient` against a real `ModelService` built from tiny
-fixtures (same pattern as `tests/test_generation.py`'s `tiny_model`/
-`tiny_tokenizer`) — never a real checkpoint. `app.dependency_overrides`
-swaps `get_model_service` for a fixture-backed fake so tests run instantly
-and don't depend on whatever happens to be trained on disk.
-"""
+"""Tests for the DaraLM FastAPI service (Phase 10, spec section 26)."""
 
 from __future__ import annotations
 
@@ -74,18 +67,12 @@ def client(tiny_model_service):
     app.dependency_overrides.clear()
 
 
-# --- GET /health -----------------------------------------------------------
-
-
 def test_health_returns_ok(client):
     response = client.get("/health")
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
     assert body["device"] == "cpu"
-
-
-# --- GET /v1/model -----------------------------------------------------------
 
 
 def test_model_info_reflects_the_loaded_config(client, tiny_tokenizer):
@@ -104,9 +91,6 @@ def test_model_info_reflects_the_loaded_config(client, tiny_tokenizer):
     assert body["device"]
 
 
-# --- POST /v1/tokenize -------------------------------------------------------
-
-
 def test_tokenize_round_trips_ids_and_pieces(client, tiny_tokenizer):
     response = client.post("/v1/tokenize", json={"text": "hello world"})
     assert response.status_code == 200
@@ -118,9 +102,7 @@ def test_tokenize_round_trips_ids_and_pieces(client, tiny_tokenizer):
 
 
 def test_tokenize_with_bos_eos_keeps_tokens_and_ids_aligned(client):
-    response = client.post(
-        "/v1/tokenize", json={"text": "hello", "add_bos": True, "add_eos": True}
-    )
+    response = client.post("/v1/tokenize", json={"text": "hello", "add_bos": True, "add_eos": True})
     body = response.json()
     assert body["tokens"][0] == "<bos>"
     assert body["tokens"][-1] == "<eos>"
@@ -128,13 +110,8 @@ def test_tokenize_with_bos_eos_keeps_tokens_and_ids_aligned(client):
 
 
 def test_tokenize_rejects_unknown_fields(client):
-    # extra="forbid" on TokenizeRequest — a typo'd field should 422, not be
-    # silently ignored (same "fail loudly" discipline as ModelConfig).
     response = client.post("/v1/tokenize", json={"text": "hi", "add_boss": True})
     assert response.status_code == 422
-
-
-# --- POST /v1/normalize -------------------------------------------------------
 
 
 def test_normalize_removes_space_before_khmer_punctuation(client):
@@ -153,9 +130,7 @@ def test_normalize_reports_unchanged_when_already_normalized(client):
 
 
 def test_normalize_arabic_digits_mode(client):
-    response = client.post(
-        "/v1/normalize", json={"text": "ឆ្នាំ២០២៤", "digits": "arabic"}
-    )
+    response = client.post("/v1/normalize", json={"text": "ឆ្នាំ២០២៤", "digits": "arabic"})
     body = response.json()
     assert "2024" in body["normalized_text"]
 
@@ -171,15 +146,6 @@ def test_normalize_rejects_unknown_fields(client):
 
 
 def test_normalize_works_without_a_loaded_model():
-    # /v1/normalize has no model dependency at all (see api/routes/normalize.py's
-    # module docstring) — verified by mounting just this router on a fresh
-    # FastAPI app with no lifespan and no model_service configured.
-    # Deliberately NOT using the real `api.main.app` here — that app's
-    # lifespan loads a real checkpoint on first request even without a
-    # `with` block (see the 503-before-startup test above), which would
-    # make this test slow and would test the wrong thing (a real model
-    # happening to be available on disk, not this route's actual
-    # independence from one).
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -192,9 +158,6 @@ def test_normalize_works_without_a_loaded_model():
     response = isolated_client.post("/v1/normalize", json={"text": "hello ។"})
     assert response.status_code == 200
     assert response.json()["normalized_text"] == "hello។"
-
-
-# --- POST /v1/generate --------------------------------------------------------
 
 
 def test_generate_returns_the_spec_shaped_response(client):
@@ -227,13 +190,8 @@ def test_generate_rejects_max_new_tokens_over_the_cap(client):
 
 
 def test_generate_uses_default_sampling_params_when_omitted(client):
-    # The spec's literal example body omits top_k/repetition_penalty/stop_on_eos
-    # entirely — confirm those still work via their Field defaults.
     response = client.post("/v1/generate", json={"prompt": "hello world"})
     assert response.status_code == 200
-
-
-# --- POST /v1/chat -----------------------------------------------------------
 
 
 def test_chat_returns_the_spec_shaped_response(client):
@@ -250,8 +208,6 @@ def test_chat_returns_the_spec_shaped_response(client):
 
 
 def test_chat_response_never_contains_the_assistant_close_marker(client):
-    # Same guarantee generate_chat() itself provides (see test_generation.py)
-    # — the API must not leak the raw </assistant> marker into the response.
     from daralm.data.chat_template import ASSISTANT_CLOSE
 
     response = client.post("/v1/chat", json={"instruction": "hello world", "max_new_tokens": 30})
@@ -274,8 +230,6 @@ def test_chat_rejects_max_new_tokens_over_the_cap(client):
 
 
 def test_chat_rejects_unknown_fields(client):
-    # extra="forbid" — e.g. a caller mistakenly sending /v1/generate's
-    # "prompt" field instead of "instruction" should 422, not be ignored.
     response = client.post("/v1/chat", json={"prompt": "hi"})
     assert response.status_code == 422
 
@@ -285,9 +239,6 @@ def test_chat_uses_default_sampling_params_when_omitted(client):
     assert response.status_code == 200
 
 
-# --- GET /metrics --------------------------------------------------------------
-
-
 def test_metrics_returns_prometheus_text_format(client):
     response = client.get("/metrics")
     assert response.status_code == 200
@@ -295,9 +246,6 @@ def test_metrics_returns_prometheus_text_format(client):
 
 
 def test_metrics_reflects_a_real_request(client):
-    # Make a real request first so its counters exist, then confirm the
-    # exposition text actually contains them — not just that /metrics
-    # returns 200 with an empty body.
     client.get("/v1/model")
     response = client.get("/metrics")
     body = response.text
@@ -312,9 +260,6 @@ def test_metrics_counts_tokens_generated(client):
     assert 'endpoint="generate"' in body
 
 
-# --- GET / (frontend) ------------------------------------------------------------
-
-
 def test_root_serves_the_frontend_html(client):
     response = client.get("/")
     assert response.status_code == 200
@@ -322,19 +267,7 @@ def test_root_serves_the_frontend_html(client):
     assert "DaraLM" in response.text
 
 
-# --- 503 before startup / without a loaded model ------------------------------
-
-
 def test_get_model_service_raises_503_before_startup():
-    # Unit-tests api.dependencies.get_model_service directly against a bare
-    # SimpleNamespace standing in for `Request` — deliberately NOT going
-    # through TestClient(app) here. A real request against the unmodified
-    # `app` object runs api.main's actual `lifespan` on first use (even
-    # without entering it as a context manager, in this Starlette version),
-    # which would load the real configs/50m.yaml checkpoint from disk —
-    # slow, and beside this test's actual point: that get_model_service
-    # fails loudly with 503 rather than an unhandled AttributeError when
-    # `app.state.model_service` was never set.
     from types import SimpleNamespace
 
     from fastapi import HTTPException

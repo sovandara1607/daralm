@@ -1,38 +1,5 @@
 #!/usr/bin/env python
-"""Build the grammar/spelling correction dataset — Stage 2, item 3 of
-`ROADMAP_NLP_PLATFORM.md`, "the lowest-friction dataset on this whole list."
-
-No external sourcing needed: every example is derived from this project's
-own `data/cleaned/{train,val,test}.jsonl` corpus. Each split's clean text
-is chunked into sentences (`daralm.data.sentences.split_sentences`), a
-sample of sentences is synthetically corrupted
-(`daralm.data.corrupt.corrupt_text`), and each (corrupted, clean) pair is
-written out as an `{"instruction", "response"}` record — the exact schema
-`daralm.data.dataset.InstructionDataset` already consumes, so
-`scripts/train_sft.py` needs zero changes to train on this, just a
-different `--data-dir`.
-
-Splits are derived split-for-split (grammar train from cleaned train,
-grammar val from cleaned val, etc.) — never re-split independently — so no
-sentence from a base-pretraining val/test document can leak into this
-task's train split.
-
-**Now includes a no-op subset** (`--noop-fraction`, default 0.15): that
-fraction of each split's sentences are used *uncorrupted* — instruction
-and response are the same clean sentence. Two real reasons, not just "more
-data": (1) a real held-out evaluation (README.md, Stage 2 item 3) already
-treats the no-op baseline — do nothing, output the input unchanged — as
-the benchmark this task has to beat; the model was never actually trained
-on a single example of "this input needs no changes," so it had no
-opportunity to learn when to leave text alone, only when to change it.
-(2) this directly encodes "minimal edits" as a training signal: a model
-that's seen both "fix this" and "this is already fine, don't touch it"
-examples has a real incentive to change only what's actually wrong,
-rather than rewriting on every input out of habit.
-
-Usage:
-    python scripts/prepare_grammar_dataset.py --sentences-per-split 3000
-"""
+"""Build the grammar/spelling correction dataset."""
 
 from __future__ import annotations
 
@@ -62,8 +29,6 @@ def build_split(
     noop_fraction: float,
     seed: int,
 ) -> list[dict]:
-    """Extract sentences from `records`, corrupt most of them (leaving
-    `noop_fraction` uncorrupted), return instruction/response pairs."""
     rng = random.Random(seed)
 
     all_sentences: list[tuple[str, str]] = []  # (sentence, language)
@@ -76,11 +41,6 @@ def build_split(
 
     examples = []
     for i, (sentence, language) in enumerate(chosen):
-        # A per-sentence seed derived from the split seed keeps the whole
-        # build reproducible (same seed -> byte-identical output) without
-        # every sentence sharing one rng.Random instance's exact call
-        # sequence, which would make `sentences_wanted` change every
-        # sentence's corruption downstream of it.
         example_rng = random.Random(seed + i)
         is_noop = example_rng.random() < noop_fraction
         corrupted = (
@@ -150,7 +110,10 @@ def main() -> None:
         noop_count = sum(1 for e in examples if e["source"] == "synthetic_noop")
         logger.info(
             "Wrote %d examples to %s (%d no-op, %.1f%%)",
-            len(examples), output_path, noop_count, 100 * noop_count / len(examples),
+            len(examples),
+            output_path,
+            noop_count,
+            100 * noop_count / len(examples),
         )
         summary[split_name] = len(examples)
 

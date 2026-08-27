@@ -1,32 +1,10 @@
-"""Tokenizer evaluation: fragmentation, compression, and unknown-token rate.
-
-Evaluated separately across four domains (spec section 9): Khmer, English,
-mixed Khmer-English, and programming/numbers/URLs. The corpus we fetch in
-Phase 1 (Wikipedia articles) is monolingual per-document, so the mixed and
-code/numbers/URL domains are hand-written examples here rather than sampled
-from the corpus — there's no other way to get code-mixed text without a
-dedicated source, and the spec explicitly asks for "manual examples showing
-tokenization output" for this phase anyway.
-
-A methodological note on "fragmentation": English has reliable whitespace
-word boundaries, so "subword pieces per word" is a natural, meaningful unit.
-Khmer does not — spaces in Khmer mark phrase/clause boundaries, not word
-boundaries — so a whitespace-based word count for Khmer would silently
-measure the wrong thing. Rather than fabricate a fake Khmer "word" unit, we
-report `avg_tokens_per_whitespace_unit` for every domain (transparently
-labeled as whitespace-delimited, not "words") alongside
-`avg_tokens_per_char`, which is well-defined for any script. For Khmer,
-read the whitespace-unit number as "pieces per space-delimited chunk", not
-"pieces per word" — the per-character number is the trustworthy one.
-"""
+"""Tokenizer evaluation: fragmentation, compression, and unknown-token rate."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from daralm.tokenizer.tokenizer import DaraLMTokenizer
-
-# --- Manual evaluation examples (spec section 9) --------------------------
 
 MIXED_EXAMPLES = [
     "Cambodia (កម្ពុជា) is a country in Southeast Asia.",
@@ -48,12 +26,7 @@ def load_domain_examples(
     english_records: list[dict[str, Any]],
     n_samples: int = 20,
 ) -> dict[str, list[str]]:
-    """Assemble the four evaluation domains.
-
-    Khmer/English examples are sampled from real cleaned corpus documents
-    (truncated to a manageable length); mixed and code/numbers/URLs are the
-    hand-written examples above.
-    """
+    """Assemble the four evaluation domains."""
 
     def sample_texts(records: list[dict[str, Any]], max_chars: int = 500) -> list[str]:
         return [r["text"][:max_chars] for r in records[:n_samples] if r["text"].strip()]
@@ -67,12 +40,7 @@ def load_domain_examples(
 
 
 def compute_metrics(tokenizer: DaraLMTokenizer, texts: list[str]) -> dict[str, Any]:
-    """Compute tokenizer quality metrics over a list of example texts.
-
-    Returns tokens-per-sentence, characters-per-token (compression — higher
-    is better, it means fewer tokens needed per unit of text), unknown-token
-    rate, and the two fragmentation views described in the module docstring.
-    """
+    """Compute tokenizer quality metrics over a list of example texts."""
     if not texts:
         return {
             "num_examples": 0,
@@ -113,11 +81,7 @@ def evaluate_tokenizer(
 
 
 def show_example_tokenization(tokenizer: DaraLMTokenizer, text: str) -> dict[str, Any]:
-    """Return a human-readable breakdown of how `text` gets tokenized.
-
-    Used for the "manual examples showing tokenization output" the spec
-    asks for — prints pieces and IDs side by side.
-    """
+    """Return a human-readable breakdown of how `text` gets tokenized."""
     pieces = tokenizer.tokenize(text)
     ids = tokenizer.encode(text)
     return {"text": text, "num_pieces": len(pieces), "pieces": pieces, "ids": ids}

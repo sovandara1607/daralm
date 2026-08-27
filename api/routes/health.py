@@ -1,4 +1,4 @@
-"""GET /health — spec section 26."""
+"""GET /health."""
 
 from __future__ import annotations
 
@@ -13,9 +13,5 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health", response_model=HealthResponse)
 def health(service: ModelService = Depends(get_model_service)) -> HealthResponse:
-    """Liveness/readiness check. Returning device info too (not just "ok")
-    costs nothing and answers the first question anyone asks after
-    "is it up" — "is it actually running on the GPU/MPS I expect, or did
-    it silently fall back to CPU."
-    """
+    """Liveness/readiness check."""
     return HealthResponse(status="ok", device=str(service.device))

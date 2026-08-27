@@ -1,9 +1,3 @@
-# DaraLM-Tiny — debug model.
-#
-# Purpose: verify the entire pipeline (config -> data -> tokenizer ->
-# model -> training -> checkpoint -> generation) quickly and cheaply
-# before spending real compute on DaraLM-10M / DaraLM-50M. See spec
-# section 17 ("DEBUG MODEL") and section 19 ("SANITY TEST").
 
 model_name: daralm-tiny
 tags: ["debug", "tiny"]

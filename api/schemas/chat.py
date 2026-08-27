@@ -1,13 +1,4 @@
-"""Request/response schema for POST /v1/chat.
-
-Not in spec section 26's literal four endpoints — deliberately deferred
-back in Phase 10 (see api/main.py's docstring at the time) to avoid an
-unlisted endpoint the spec didn't ask for. Built now as the first piece of
-the "production architecture" direction (spec section 27): `/v1/generate`
-is a raw-completion endpoint (no chat template applied); this one wraps
-`daralm.inference.generator.generate_chat`, which applies the
-`<user>/<assistant>` chat template `InstructionDataset` trains on.
-"""
+"""Request/response schema for POST /v1/chat."""
 
 from __future__ import annotations
 

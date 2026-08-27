@@ -1,8 +1,4 @@
-"""Tests for daralm.training.checkpoint — save/resume correctness.
-
-Per spec section 16: "train -> save -> reload -> generate produces valid
-behavior." These tests exercise that exact loop at a tiny scale.
-"""
+"""Tests for daralm.training.checkpoint — save/resume correctness."""
 
 from __future__ import annotations
 
@@ -39,9 +35,6 @@ def _tiny_model_config() -> ModelConfig:
 
 
 def _make_tokenizer_file(tmp_path) -> str:
-    """A checkpoint records a tokenizer fingerprint, but doesn't need a real
-    SentencePiece model to test that mechanism — any file with bytes works.
-    """
     path = tmp_path / "fake_tokenizer.model"
     path.write_bytes(b"fake-tokenizer-bytes-v1")
     return str(path)
@@ -55,15 +48,21 @@ def test_save_and_load_roundtrip_restores_model_weights(tmp_path):
     tokenizer_path = _make_tokenizer_file(tmp_path)
 
     checkpoint_dir = save_checkpoint(
-        tmp_path / "checkpoints", "step-10", model, optimizer, scheduler, 10, 1000, config,
+        tmp_path / "checkpoints",
+        "step-10",
+        model,
+        optimizer,
+        scheduler,
+        10,
+        1000,
+        config,
         tokenizer_path,
     )
 
-    # A fresh model with different (freshly re-initialized) weights.
     new_model = DaraLMTransformer(config.architecture)
-    assert not torch.equal(
-        next(model.parameters()), next(new_model.parameters())
-    ), "test setup invariant broken: fresh model happened to match by chance"
+    assert not torch.equal(next(model.parameters()), next(new_model.parameters())), (
+        "test setup invariant broken: fresh model happened to match by chance"
+    )
 
     result = load_checkpoint(checkpoint_dir, new_model, tokenizer_path=tokenizer_path)
 
@@ -80,7 +79,6 @@ def test_save_and_load_roundtrip_restores_optimizer_and_scheduler(tmp_path):
     scheduler = build_scheduler(optimizer, config.training)
     tokenizer_path = _make_tokenizer_file(tmp_path)
 
-    # Take a few real steps so optimizer/scheduler have non-initial state.
     for _ in range(3):
         optimizer.zero_grad()
         input_ids = torch.randint(0, config.architecture.vocab_size, (2, 8))
@@ -91,7 +89,14 @@ def test_save_and_load_roundtrip_restores_optimizer_and_scheduler(tmp_path):
     lr_before_save = scheduler.get_last_lr()[0]
 
     checkpoint_dir = save_checkpoint(
-        tmp_path / "checkpoints", "step-3", model, optimizer, scheduler, 3, 300, config,
+        tmp_path / "checkpoints",
+        "step-3",
+        model,
+        optimizer,
+        scheduler,
+        3,
+        300,
+        config,
         tokenizer_path,
     )
 
@@ -120,13 +125,19 @@ def test_load_checkpoint_tokenizer_mismatch_raises(tmp_path):
     tokenizer_path = _make_tokenizer_file(tmp_path)
 
     checkpoint_dir = save_checkpoint(
-        tmp_path / "checkpoints", "step-1", model, optimizer, scheduler, 1, 100, config,
+        tmp_path / "checkpoints",
+        "step-1",
+        model,
+        optimizer,
+        scheduler,
+        1,
+        100,
+        config,
         tokenizer_path,
     )
 
     different_tokenizer = tmp_path / "different_tokenizer.model"
     different_tokenizer.write_bytes(b"totally-different-bytes")
-
 
     with pytest.raises(ValueError, match="Tokenizer mismatch"):
         load_checkpoint(checkpoint_dir, model, tokenizer_path=str(different_tokenizer))
@@ -140,7 +151,14 @@ def test_config_yaml_is_written_and_reloadable(tmp_path):
     tokenizer_path = _make_tokenizer_file(tmp_path)
 
     checkpoint_dir = save_checkpoint(
-        tmp_path / "checkpoints", "step-1", model, optimizer, scheduler, 1, 100, config,
+        tmp_path / "checkpoints",
+        "step-1",
+        model,
+        optimizer,
+        scheduler,
+        1,
+        100,
+        config,
         tokenizer_path,
     )
     reloaded_config = ModelConfig.from_yaml(checkpoint_dir / "config.yaml")
@@ -158,8 +176,15 @@ def test_find_latest_checkpoint_picks_highest_step(tmp_path):
 
     for step in (5, 20, 10):
         save_checkpoint(
-            checkpoint_root, f"step-{step}", model, optimizer, scheduler, step, step * 100,
-            config, tokenizer_path,
+            checkpoint_root,
+            f"step-{step}",
+            model,
+            optimizer,
+            scheduler,
+            step,
+            step * 100,
+            config,
+            tokenizer_path,
         )
     save_checkpoint(
         checkpoint_root, "best", model, optimizer, scheduler, 999, 99900, config, tokenizer_path

@@ -18,8 +18,6 @@ from daralm.model.transformer import DaraLMTransformer
 from daralm.tokenizer.tokenizer import DaraLMTokenizer
 from daralm.tokenizer.train import train_sentencepiece
 
-# --- sampling: temperature ---------------------------------------------
-
 
 def test_temperature_one_is_identity():
     logits = torch.tensor([1.0, 2.0, 3.0])
@@ -37,9 +35,6 @@ def test_temperature_zero_or_negative_raises():
         apply_temperature(torch.tensor([1.0]), 0.0)
     with pytest.raises(ValueError):
         apply_temperature(torch.tensor([1.0]), -1.0)
-
-
-# --- sampling: top-k -----------------------------------------------------
 
 
 def test_top_k_keeps_only_k_highest():
@@ -62,12 +57,7 @@ def test_top_k_larger_than_vocab_is_noop():
     assert torch.equal(top_k_filter(logits, k=100), logits)
 
 
-# --- sampling: top-p -----------------------------------------------------
-
-
 def test_top_p_keeps_smallest_set_covering_probability_mass():
-    # One dominant token (~most of the probability mass) — top_p=0.9 should
-    # keep just that one (or very few) tokens.
     logits = torch.tensor([10.0, 0.0, 0.0, 0.0])
     result = top_p_filter(logits, p=0.9)
     kept = torch.isfinite(result)
@@ -84,9 +74,6 @@ def test_top_p_always_keeps_at_least_one_token():
     logits = torch.tensor([1.0, 1.0, 1.0, 1.0])
     result = top_p_filter(logits, p=0.01)
     assert torch.isfinite(result).sum().item() >= 1
-
-
-# --- sampling: repetition penalty ----------------------------------------
 
 
 def test_repetition_penalty_one_is_noop():
@@ -108,9 +95,6 @@ def test_repetition_penalty_empty_history_is_noop():
     assert torch.equal(result, logits)
 
 
-# --- sampling: sample_next_token -----------------------------------------
-
-
 def test_sample_next_token_temperature_zero_is_greedy():
     logits = torch.tensor([1.0, 5.0, 2.0])
     token = sample_next_token(logits, generated_ids=[], temperature=0.0)
@@ -122,9 +106,6 @@ def test_sample_next_token_top_k_one_is_deterministic():
     for _ in range(5):
         token = sample_next_token(logits, generated_ids=[], temperature=1.0, top_k=1)
         assert token == 1  # only the highest-scoring token survives top_k=1
-
-
-# --- generation: end to end -----------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -155,39 +136,39 @@ def tiny_model(tiny_tokenizer):
 
 
 def test_generate_respects_max_new_tokens(tiny_model, tiny_tokenizer):
-    text = generate(
-        tiny_model, tiny_tokenizer, prompt="hello", max_new_tokens=5, stop_on_eos=False
-    )
-    # Can't assert exact token count from decoded text, but generation
-    # should complete without error and return a non-empty string.
+    text = generate(tiny_model, tiny_tokenizer, prompt="hello", max_new_tokens=5, stop_on_eos=False)
     assert isinstance(text, str)
     assert len(text) > 0
 
 
 def test_generate_greedy_is_deterministic(tiny_model, tiny_tokenizer):
     text_a = generate(
-        tiny_model, tiny_tokenizer, prompt="hello world", max_new_tokens=10,
-        temperature=0.0, stop_on_eos=False,
+        tiny_model,
+        tiny_tokenizer,
+        prompt="hello world",
+        max_new_tokens=10,
+        temperature=0.0,
+        stop_on_eos=False,
     )
     text_b = generate(
-        tiny_model, tiny_tokenizer, prompt="hello world", max_new_tokens=10,
-        temperature=0.0, stop_on_eos=False,
+        tiny_model,
+        tiny_tokenizer,
+        prompt="hello world",
+        max_new_tokens=10,
+        temperature=0.0,
+        stop_on_eos=False,
     )
     assert text_a == text_b
 
 
 def test_generate_stops_on_eos_when_requested(tiny_model, tiny_tokenizer, monkeypatch):
-    # Force the very first sampled token to be <eos>, and confirm generation
-    # stops immediately rather than running to max_new_tokens.
     import daralm.inference.generator as generator_module
 
     def fake_sample(*args, **kwargs):
         return tiny_tokenizer.eos_id
 
     monkeypatch.setattr(generator_module, "sample_next_token", fake_sample)
-    text = generate(
-        tiny_model, tiny_tokenizer, prompt="hello", max_new_tokens=50, stop_on_eos=True
-    )
+    text = generate(tiny_model, tiny_tokenizer, prompt="hello", max_new_tokens=50, stop_on_eos=True)
     assert isinstance(text, str)
 
 
@@ -195,9 +176,6 @@ def test_generate_output_is_a_valid_string_for_various_prompts(tiny_model, tiny_
     for prompt in ["hello", "world test", "a"]:
         text = generate(tiny_model, tiny_tokenizer, prompt=prompt, max_new_tokens=5)
         assert isinstance(text, str)
-
-
-# --- generate_chat: end to end --------------------------------------------
 
 
 def test_generate_chat_returns_a_string(tiny_model, tiny_tokenizer):
@@ -208,9 +186,6 @@ def test_generate_chat_returns_a_string(tiny_model, tiny_tokenizer):
 def test_generate_chat_response_never_contains_the_assistant_close_marker(
     tiny_model, tiny_tokenizer
 ):
-    # Even if the model happens to emit "</assistant>", it must be stripped
-    # from the returned response — generate_chat should return only the
-    # assistant's turn, not the raw decoded stream including its own marker.
     from daralm.data.chat_template import ASSISTANT_CLOSE
 
     text = generate_chat(tiny_model, tiny_tokenizer, instruction="hello world", max_new_tokens=30)
@@ -220,18 +195,6 @@ def test_generate_chat_response_never_contains_the_assistant_close_marker(
 def test_generate_chat_stops_when_assistant_close_is_generated(
     tiny_model, tiny_tokenizer, monkeypatch
 ):
-    # The tiny fixture's vocab (trained on a corpus with no "<", "/", ">"
-    # characters at all) can't round-trip the literal "</assistant>" string
-    # through real token ids, so this test mocks decode() directly instead
-    # — it's testing generate_chat's stop-on-marker loop logic, not the
-    # tokenizer's fidelity for out-of-corpus characters.
-    #
-    # generate_chat compares against the marker's own *decoded* form, not
-    # its literal source text (see generate_chat's docstring for the real
-    # bug this fixed: encode->decode isn't lossless for "<"/">" on the real
-    # tokenizer, so the literal string never actually appeared in decoded
-    # output). This mock must inject that same decoded form, not the
-    # literal "</assistant>", to actually exercise the stop-on-marker path.
     import daralm.inference.generator as generator_module
     from daralm.data.chat_template import ASSISTANT_CLOSE
 
@@ -246,8 +209,6 @@ def test_generate_chat_stops_when_assistant_close_is_generated(
 
     def fake_decode(ids):
         call_count["n"] += 1
-        # +1 vs. the loop-only count: generate_chat's own precompute of
-        # decoded_marker is itself one decode() call, before the loop starts.
         if call_count["n"] >= 4:
             return f"a response {decoded_marker}"
         return real_decode(ids)

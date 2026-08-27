@@ -14,13 +14,10 @@ def test_identical_strings_have_zero_wer():
 
 
 def test_cer_counts_single_substitution():
-    # "cat" -> "car": 1 substitution / 3 reference chars
     assert character_error_rate("car", "cat") == 1 / 3
 
 
 def test_cer_counts_single_deletion_needed():
-    # hypothesis "ct" vs reference "cat": 1 deletion from hypothesis's
-    # perspective (need to insert 'a') / 3 reference chars
     assert character_error_rate("ct", "cat") == 1 / 3
 
 
@@ -31,7 +28,6 @@ def test_wer_counts_one_wrong_word():
 def test_wer_counts_completely_different_sentences():
     hyp = "completely different words entirely"
     ref = "the quick brown fox"
-    # every reference word must be replaced (allowing for length mismatch)
     result = word_error_rate(hyp, ref)
     assert result > 0.5
 
@@ -47,7 +43,5 @@ def test_empty_reference_nonempty_hypothesis_is_one():
 
 
 def test_cer_can_exceed_one_for_very_wrong_hypothesis():
-    # A hypothesis much longer than a short reference can have more edits
-    # than the reference has characters.
     result = character_error_rate("xxxxxxxxxxxxxxxxxxxx", "hi")
     assert result > 1.0

@@ -27,14 +27,7 @@ dev = [
     "httpx>=0.27,<1",
 ]
 
-# On Linux (the Docker image's platform — see Dockerfile), resolve torch
-# against PyTorch's own CPU-only wheel index instead of the default PyPI
-# index. PyPI's default Linux torch wheel bundles the full NVIDIA CUDA
-# runtime (~4.4GB of nvidia-*/triton packages) regardless of whether a GPU
-# is ever present — measured, not assumed, after the first real Docker
-# build came out to 16GB from exactly this. macOS (this project's actual
-# dev/training platform, using MPS) is untouched by this marker and keeps
-# resolving its normal torch wheel from the default index.
+# Use CPU-only PyTorch wheels in the Linux container.
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
@@ -62,7 +55,5 @@ target-version = "py310"
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
-# FastAPI's `Depends(...)` as an argument default is the framework's own
-# documented dependency-injection pattern, not the mutable-default-argument
-# bug B008 exists to catch — ignored only for the routes that use it.
+# FastAPI dependency defaults intentionally use Depends().
 "api/routes/*.py" = ["B008"]

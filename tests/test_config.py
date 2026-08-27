@@ -118,8 +118,5 @@ def test_10m_config_loads():
 def test_50m_config_loads():
     config = ModelConfig.from_yaml(REPO_ROOT / "configs" / "50m.yaml")
     assert config.model_name == "daralm-50m"
-    # vocab_size must match whatever the Phase 2 tokenizer was actually
-    # trained at (see configs/50m.yaml's note) rather than a fixed literal —
-    # just check it's in the spec's stated 16k-32k range.
     assert 16_000 <= config.architecture.vocab_size <= 32_000
     assert config.training.precision == "bf16"

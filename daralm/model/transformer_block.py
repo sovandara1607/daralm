@@ -1,29 +1,3 @@
-"""One decoder Transformer block: pre-norm attention + pre-norm feed-forward,
-each wrapped in a residual connection.
-
-    x -> RMSNorm -> CausalSelfAttention -> (+x) -> RMSNorm -> FeedForward -> (+x)
-
-Two design choices worth calling out:
-
-Pre-normalization (norm *before* the sub-layer, not after): in the original
-"Attention Is All You Need" Transformer, normalization came after the
-residual add ("post-norm"). Post-norm Transformers are notoriously unstable
-to train at depth without a careful learning-rate warmup, because gradients
-have to flow back through the normalization at every layer. Pre-norm
-(GPT-2 onward) instead normalizes only the input *to* each sub-layer, so
-the residual stream itself is never renormalized — gradients have a clean,
-unimpeded path all the way back through the residual connections, which is
-substantially more stable and is now the standard choice.
-
-Residual connections (the `+ x`): without them, stacking many layers makes
-both the forward signal and backward gradient have to pass through every
-single layer's transformation, and either can shrink or blow up
-exponentially with depth. The `+x` gives the network a direct, always-on
-path that bypasses each sub-layer, so a layer only has to learn a
-*correction* to its input rather than needing to reproduce/preserve it
-first — this is what actually makes deep Transformers trainable.
-"""
-
 from __future__ import annotations
 
 import torch

@@ -1,18 +1,5 @@
 #!/usr/bin/env python
-"""Build the DaraLM raw + cleaned dataset from public Khmer/English sources.
-
-Runs the full Phase 1 pipeline (spec section 6):
-
-    fetch raw -> clean -> filter -> deduplicate -> split -> write + report
-
-Nothing here trains a model or touches a tokenizer — this script's only job
-is to turn raw source text into a validated, deduplicated, split JSONL
-corpus that Phase 2 (tokenizer training) and beyond can build on.
-
-Usage:
-    python scripts/prepare_dataset.py --languages km en --docs-per-language 1000
-    python scripts/prepare_dataset.py --languages km en --docs-per-language 1000 --skip-fetch
-"""
+"""Build the DaraLM raw + cleaned dataset from public Khmer/English sources."""
 
 from __future__ import annotations
 
@@ -59,7 +46,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def fetch_raw(languages: list[str], n_docs: int, min_chars: int, raw_dir: Path) -> list[dict]:
-    """Fetch each language's sample and write it to data/raw/, recording a manifest."""
     all_records: list[dict] = []
     manifest_entries = []
 
@@ -81,7 +67,6 @@ def fetch_raw(languages: list[str], n_docs: int, min_chars: int, raw_dir: Path) 
 
 
 def load_existing_raw(languages: list[str], raw_dir: Path) -> list[dict]:
-    """Load previously-fetched raw JSONL files instead of hitting the network again."""
     all_records: list[dict] = []
     for language in languages:
         path = raw_dir / f"wikipedia_{language}.jsonl"
@@ -92,12 +77,7 @@ def load_existing_raw(languages: list[str], raw_dir: Path) -> list[dict]:
 
 
 def clean_and_filter(raw_records: list[dict]) -> tuple[list[dict], dict[str, int], list[dict]]:
-    """Run every raw record through cleaning + quality filtering.
-
-    Returns (kept_records, reason_counts, filtered_examples) where
-    `filtered_examples` is a small sample of dropped documents (with the
-    reason they were dropped) for manual quality inspection.
-    """
+    """Run every raw record through cleaning + quality filtering."""
     kept: list[dict] = []
     reason_counts: dict[str, int] = {}
     filtered_examples: list[dict] = []
@@ -110,8 +90,11 @@ def clean_and_filter(raw_records: list[dict]) -> tuple[list[dict], dict[str, int
         reason_counts[reason] = reason_counts.get(reason, 0) + 1
         if len(filtered_examples) < 20:
             filtered_examples.append(
-                {"reason": reason, "source": record.get("source", "unknown"),
-                 "text_preview": (record.get("text") or "")[:200]}
+                {
+                    "reason": reason,
+                    "source": record.get("source", "unknown"),
+                    "text_preview": (record.get("text") or "")[:200],
+                }
             )
 
     return kept, reason_counts, filtered_examples

@@ -1,21 +1,4 @@
 #!/usr/bin/env python
-"""Build the instruction-tuning dataset: English (Alpaca) + Khmer (real + hand-authored).
-
-Same discipline as Phase 1's `prepare_dataset.py`: fetch -> clean -> dedupe
--> split -> report, with every source's license recorded, not just
-downloaded and forgotten (spec section 30).
-
-Phase 9 originally shipped only 25 hand-authored Khmer examples (no
-suitable public Khmer instruction-tuning dataset was found at the time).
-A later pass found one: `saillab/alpaca_khmer_taco`, a ~50K-row Khmer
-translation of Alpaca. It's now the primary Khmer source; the 25
-hand-authored examples (`data/instructions/khmer_handauthored.jsonl`) are
-kept as a small supplement, still clearly labeled `"source":
-"handauthored"` in every record, never presented as if they were sourced.
-
-Usage:
-    python scripts/prepare_instruction_dataset.py --n-english 500 --n-khmer 400
-"""
 
 from __future__ import annotations
 
@@ -64,14 +47,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def clean_examples(records: list[dict]) -> tuple[list[dict], int]:
-    """Light cleaning pass: normalize whitespace/unicode, drop empty/too-short pairs.
-
-    Instruction examples are short and structured (unlike Phase 1's long
-    documents), so the full document-quality pipeline (language detection,
-    URL-spam heuristics, etc.) doesn't apply here — just the parts that do:
-    Khmer-safe Unicode normalization and a floor on both instruction and
-    response length.
-    """
     cleaned = []
     dropped = 0
     for record in records:
@@ -140,8 +115,6 @@ def main() -> None:
     deduped_records, duplicate_count = deduplicate(
         [{"text": f"{r['instruction']}\n{r['response']}", **r} for r in cleaned_records]
     )
-    # `deduplicate` expects a "text" field (it's generic over any record with
-    # one); strip that synthetic field back out before saving.
     for record in deduped_records:
         record.pop("text", None)
     logger.info(
@@ -149,8 +122,11 @@ def main() -> None:
     )
 
     splits = split_dataset(
-        deduped_records, train_ratio=args.train_ratio, val_ratio=args.val_ratio,
-        test_ratio=1.0 - args.train_ratio - args.val_ratio, seed=args.seed,
+        deduped_records,
+        train_ratio=args.train_ratio,
+        val_ratio=args.val_ratio,
+        test_ratio=1.0 - args.train_ratio - args.val_ratio,
+        seed=args.seed,
     )
     for split_name, split_records in splits.items():
         if not split_records:

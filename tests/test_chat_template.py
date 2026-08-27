@@ -1,4 +1,4 @@
-"""Tests for daralm.data.chat_template — spec section 25's chat format."""
+"""Tests for daralm.data.chat_template."""
 
 from __future__ import annotations
 
@@ -19,8 +19,6 @@ def test_format_prompt_contains_markers_and_instruction():
     assert USER_CLOSE in prompt
     assert ASSISTANT_OPEN in prompt
     assert "What is a database?" in prompt
-    # Prompt text stops right after the assistant marker, ready for the
-    # model to start generating — it must not contain the closing marker.
     assert ASSISTANT_CLOSE not in prompt
 
 

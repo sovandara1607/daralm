@@ -1,30 +1,4 @@
 #!/usr/bin/env python
-"""Train a ClassificationHead on a frozen DaraLM backbone — the roadmap's
-first classification-family capability (`ROADMAP_NLP_PLATFORM.md`).
-
-This is deliberately a **linear probe**: the backbone's weights are frozen
-(`requires_grad=False`), only the small `ClassificationHead` is trained.
-Two honest reasons, not just speed:
-
-1. It directly answers a real, interesting question — "does this
-   backbone's pretrained representation already linearly encode this
-   task" — rather than conflating that with "can enough gradient descent
-   on the whole model eventually solve it," which a full fine-tune would.
-2. It's the cheapest possible way to validate the whole new mechanism
-   (`ClassificationHead`'s pooling, `ClassificationDataset`'s label
-   handling, this training loop) actually works end to end before
-   investing in a harder classification task with real, sourced data.
-
-Default task: language detection (en vs km) from `data/cleaned/*.jsonl`'s
-existing `language` field — genuinely free labels, already produced by
-`daralm.data.cleaner.detect_language` during Phase 1's corpus prep, no new
-data sourcing needed. Documented honestly in README as an easy task for a
-disjoint-Unicode-script reason, not claimed as a hard-won capability.
-
-Usage:
-    python scripts/train_classifier.py --backbone-config configs/50m.yaml \\
-        --backbone-checkpoint checkpoints/daralm-50m/best
-"""
 
 from __future__ import annotations
 
@@ -132,10 +106,7 @@ def main() -> None:
     backbone = DaraLMTransformer(backbone_config.architecture, pad_token_id=tokenizer.pad_id)
     load_checkpoint(args.backbone_checkpoint, backbone, tokenizer_path=args.tokenizer)
     backbone.to(device)
-    # num_parameters() counts *trainable* (requires_grad) params, so it must
-    # be read before freezing below — after freezing it would report 0,
-    # which is correct for "trainable" but misleading for "how big is this
-    # backbone I just loaded."
+    # Count parameters before freezing them.
     backbone_param_count = backbone.num_parameters()
     for param in backbone.parameters():
         param.requires_grad_(False)
@@ -187,9 +158,7 @@ def main() -> None:
             optimizer.step()
 
         val_loss, val_accuracy = evaluate(backbone, head, val_loader, device)
-        logger.info(
-            "epoch=%d val_loss=%.4f val_accuracy=%.4f", epoch, val_loss, val_accuracy
-        )
+        logger.info("epoch=%d val_loss=%.4f val_accuracy=%.4f", epoch, val_loss, val_accuracy)
         if val_accuracy > best_val_accuracy:
             best_val_accuracy = val_accuracy
             args.checkpoint_dir.mkdir(parents=True, exist_ok=True)

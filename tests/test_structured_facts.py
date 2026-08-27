@@ -1,9 +1,3 @@
-"""Tests for daralm.data.structured_facts — the synthetic (text, JSON)
-generator behind structured JSON generation (Stage 2 item 4 of
-ROADMAP_NLP_PLATFORM.md). v3: field values are freshly-generated random
-strings, not drawn from any fixed vocabulary — see the module docstring.
-"""
-
 from __future__ import annotations
 
 import random
@@ -81,11 +75,6 @@ def test_varies_across_calls():
 
 
 def test_random_values_are_effectively_never_repeated():
-    # The whole point of v3: no fixed pool to exhaust or accidentally
-    # share between train/test — over many calls, names/occupations/cities
-    # should almost never collide (a few incidental short-word collisions
-    # are fine; systematic repetition would mean the "random" generator
-    # regressed toward a small closed set again).
     rng = random.Random(9)
     names, occupations, cities = set(), set(), set()
     n = 300

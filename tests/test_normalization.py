@@ -28,8 +28,6 @@ def test_rms_norm_matches_manual_computation():
 
 
 def test_unit_weight_normalizes_to_unit_rms():
-    # With weight fixed at 1, the output's root-mean-square should be ~1
-    # (RMSNorm's entire job), regardless of the input's original scale.
     norm = RMSNorm(hidden_size=32)
     x = torch.randn(4, 10, 32) * 100.0  # large arbitrary scale
     out = norm(x)

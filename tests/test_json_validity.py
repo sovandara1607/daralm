@@ -15,7 +15,6 @@ def test_valid_object_is_valid_json():
 
 
 def test_valid_non_object_json_is_still_valid_json():
-    # is_valid_json checks JSON validity in general, not schema shape.
     assert is_valid_json("42") is True
     assert is_valid_json('"just a string"') is True
     assert is_valid_json("[1, 2, 3]") is True

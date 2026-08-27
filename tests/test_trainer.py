@@ -1,10 +1,4 @@
-"""Tests for daralm.training — optimizer, scheduler, and the Trainer loop.
-
-Uses tiny synthetic datasets/models throughout so these run in well under a
-second, while still exercising real training mechanics (not mocks): actual
-forward/backward passes, actual gradient accumulation, actual checkpoint
-files on disk.
-"""
+"""Tests for daralm.training — optimizer, scheduler, and the Trainer loop."""
 
 from __future__ import annotations
 
@@ -48,9 +42,6 @@ def _tiny_config(**training_overrides) -> ModelConfig:
     )
 
 
-# --- optimizer -------------------------------------------------------------
-
-
 def test_optimizer_splits_decay_and_no_decay_params():
     config = _tiny_config()
     model = DaraLMTransformer(config.architecture)
@@ -59,7 +50,6 @@ def test_optimizer_splits_decay_and_no_decay_params():
     decayed, not_decayed = optimizer.param_groups
     assert decayed["weight_decay"] == config.training.weight_decay
     assert not_decayed["weight_decay"] == 0.0
-    # RMSNorm weights (1D) should all be in the no-decay group.
     no_decay_param_ids = {id(p) for p in not_decayed["params"]}
     for name, param in model.named_parameters():
         if "norm" in name:
@@ -74,9 +64,6 @@ def test_optimizer_unknown_type_raises():
         build_optimizer(model, config.training)
 
 
-# --- scheduler -------------------------------------------------------------
-
-
 def test_scheduler_warmup_increases_lr_linearly():
     config = _tiny_config(warmup_steps=4, max_steps=20)
     model = DaraLMTransformer(config.architecture)
@@ -87,7 +74,6 @@ def test_scheduler_warmup_increases_lr_linearly():
     for _ in range(4):
         lrs.append(scheduler.get_last_lr()[0])
         scheduler.step()
-    # Strictly increasing during warmup.
     assert all(lrs[i] < lrs[i + 1] for i in range(len(lrs) - 1))
 
 
@@ -116,9 +102,6 @@ def test_scheduler_decays_toward_min_lr_ratio():
     final_lr = scheduler.get_last_lr()[0]
     assert final_lr < peak_lr
     assert final_lr >= min_lr - 1e-9
-
-
-# --- Trainer -----------------------------------------------------------
 
 
 @torch.no_grad()
@@ -152,11 +135,6 @@ def test_trainer_runs_and_decreases_loss(tmp_path_factory, tmp_path):
     train_dataset = PackedTokenDataset(train_records, tokenizer, block_size=block_size)
     val_dataset = PackedTokenDataset(val_records, tokenizer, block_size=block_size)
 
-    # save_checkpoint fingerprints the tokenizer file's bytes; the real
-    # SentencePiece model built by `_make_tiny_tokenizer` already exists on
-    # disk, but _train_step never touches tokenizer_path, so a placeholder
-    # file is enough here — checkpoint save/load correctness is covered by
-    # tests/test_checkpoint.py, not this test.
     tokenizer_file = tmp_path_factory.mktemp("tokfile") / "tok.model"
     tokenizer_file.write_bytes(b"dummy-bytes-for-fingerprint")
 
@@ -220,9 +198,6 @@ def test_trainer_full_run_writes_checkpoints(tmp_path_factory, tmp_path):
     assert (checkpoint_root / config.model_name / "best").exists()
 
 
-# --- history tracking (Phase 6) -----------------------------------------
-
-
 def test_trainer_records_and_writes_history(tmp_path_factory, tmp_path):
     tokenizer = _make_tiny_tokenizer(tmp_path_factory)
     records = [
@@ -258,10 +233,6 @@ def test_trainer_records_and_writes_history(tmp_path_factory, tmp_path):
     )
     trainer.train()
 
-    # log_interval=2 over 10 steps -> entries at 2,4,6,8,10; eval_interval=5
-    # -> val_loss at 5,10. Step 5 isn't a log_interval multiple, so it gets
-    # its own val-only entry; step 10 is both, merged into one entry — 6
-    # entries total, 2 of which carry val_loss/perplexity.
     assert len(trainer.history) == 6
     entries_with_val = [e for e in trainer.history if "val_loss" in e]
     assert len(entries_with_val) == 2
@@ -277,15 +248,7 @@ def test_trainer_records_and_writes_history(tmp_path_factory, tmp_path):
     assert loaded == trainer.history
 
 
-# --- SFT / InstructionDataset (Phase 9) ------------------------------------
-
-
 def test_trainer_handles_instruction_dataset_batches(tmp_path_factory, tmp_path):
-    """The Trainer must accept `InstructionDataset`'s (input_ids, labels) batches
-    exactly as readily as `PackedTokenDataset`'s plain tensors — proving
-    `_unpack_batch` and the masked-loss path work end to end, not just in
-    isolation.
-    """
     tokenizer = _make_tiny_tokenizer(tmp_path_factory)
     examples = [
         {

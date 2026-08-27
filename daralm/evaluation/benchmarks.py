@@ -1,20 +1,3 @@
-"""Cross-checkpoint evaluation: the same fixed prompts, the same overfitting
-check, and a real-data memorization check, applied uniformly to every
-trained model — the piece flagged as deferred since Phase 5.
-
-Spec section 15 in full:
-  - Language modeling: training loss, validation loss, perplexity (already
-    tracked per-run since Phase 6's history.json; this module reduces it).
-  - Generation quality: fixed prompts, same prompts across checkpoints.
-  - Memorization: does the model reproduce training documents (Phase 5
-    built `check_memorization` for this, applied there to a *deliberately*
-    tiny, deliberately-overfit set where high reproduction was the goal;
-    here it's applied to a sample of the *real* training corpus, where the
-    interpretation flips — low reproduction is expected and reassuring at
-    this project's current scale/step counts).
-  - Overfitting: compare training loss vs validation loss.
-"""
-
 from __future__ import annotations
 
 import json
@@ -33,11 +16,6 @@ from daralm.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Same three domains as Phase 2's tokenizer evaluation and every generation
-# sample since Phase 4 — kept identical on purpose so results are directly
-# comparable across every phase and every checkpoint, not just within one
-# script's output (spec section 15: "use the same prompts across
-# checkpoints").
 FIXED_PROMPTS = {
     "english": "Cambodia is a country in",
     "khmer": "កម្ពុជាជាប្រទេសមួយនៅ",
@@ -75,15 +53,6 @@ def summarize_history(history: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def load_history_or_meta(checkpoint_dir: str | Path) -> dict[str, Any]:
-    """Prefer `history.json` (the full timeline); fall back to `best/meta.json`
-    (just the final numbers) for checkpoints trained before Phase 6 added
-    history tracking, rather than failing outright.
-
-    This is a real situation this project has, not a hypothetical: DaraLM-
-    Tiny's checkpoint (Phase 4) predates `history.json`. An evaluation tool
-    that can only handle checkpoints trained after its own most recent
-    feature isn't very useful.
-    """
     checkpoint_dir = Path(checkpoint_dir)
     history_path = checkpoint_dir / "history.json"
     if history_path.exists():
@@ -109,16 +78,7 @@ def load_history_or_meta(checkpoint_dir: str | Path) -> dict[str, Any]:
 
 
 def check_overfitting(history_summary: dict[str, Any]) -> dict[str, Any]:
-    """Compare training loss to validation loss — spec section 15's overfitting check.
-
-    Two independent signals, both from data already in `history_summary`:
-    1. The final train/val gap — a persistently large gap (val much worse
-       than train) is the classic overfitting signature.
-    2. Whether the final validation loss is still the *best* seen, or
-       whether validation loss has already started rising after an earlier
-       low point (the more decisive signal: loss falling then rising is
-       overfitting; a gap alone can just mean "not converged yet").
-    """
+    """Compare training loss to validation loss."""
     if not history_summary.get("history_available"):
         return {"verdict": "insufficient data", "reason": history_summary.get("note", "")}
 
@@ -151,12 +111,7 @@ def evaluate_checkpoint(
     temperature: float = 0.8,
     top_p: float = 0.9,
 ) -> dict[str, Any]:
-    """Full Phase 8 evaluation for one trained checkpoint.
-
-    Returns language-modeling metrics, the overfitting verdict, fixed-prompt
-    generations, and a real-corpus memorization check — everything spec
-    section 15 asks for, for this one model.
-    """
+    """Full Phase 8 evaluation for one trained checkpoint."""
     checkpoint_dir = Path(checkpoint_dir)
     best_dir = checkpoint_dir / "best"
     config = ModelConfig.from_yaml(best_dir / "config.yaml")
@@ -213,7 +168,6 @@ def compare_checkpoints(
     real_documents: list[str],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    """Run `evaluate_checkpoint` over several checkpoints for a side-by-side report."""
     results = {}
     for checkpoint_dir in checkpoint_dirs:
         checkpoint_dir = Path(checkpoint_dir)

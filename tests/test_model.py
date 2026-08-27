@@ -1,11 +1,4 @@
-"""Tests for daralm.model.transformer — the full DaraLMTransformer.
-
-Per spec section 16 ("Transformer" tests): forward pass, loss calculation,
-different batch sizes, different sequence sizes. Also verifies weight tying
-and cross-checks the real parameter count against the analytical estimator
-in `scripts/inspect_model_config.py` — the promise made in that script's
-docstring since Phase 0.
-"""
+"""Tests for daralm.model.transformer — the full DaraLMTransformer."""
 
 from __future__ import annotations
 
@@ -24,13 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_inspect_model_config_module():
-    """Import scripts/inspect_model_config.py as a module, by file path.
-
-    `scripts/` isn't a Python package (its files are standalone CLI entry
-    points, not importable modules in the normal sense — see Phase 0's
-    file-tree notes), so we load it directly rather than adding it to
-    `sys.path` and risking name collisions with other tools.
-    """
+    """Import scripts/inspect_model_config.py as a module, by file path."""
     module_path = REPO_ROOT / "scripts" / "inspect_model_config.py"
     spec = importlib.util.spec_from_file_location("inspect_model_config", module_path)
     module = importlib.util.module_from_spec(spec)
@@ -53,9 +40,6 @@ def _tiny_architecture(**overrides) -> ArchitectureConfig:
     return ArchitectureConfig(**defaults)
 
 
-# --- forward pass / shapes --------------------------------------------------
-
-
 def test_forward_pass_output_shape():
     config = _tiny_architecture()
     model = DaraLMTransformer(config)
@@ -66,8 +50,6 @@ def test_forward_pass_output_shape():
 
 
 def test_hidden_states_are_none_by_default():
-    # return_hidden_states defaults to False — every existing call site
-    # (causal-LM training, generate()) is unaffected by this being added.
     config = _tiny_architecture()
     model = DaraLMTransformer(config)
     input_ids = torch.randint(0, config.vocab_size, (2, 10))
@@ -81,15 +63,10 @@ def test_hidden_states_returned_with_correct_shape_when_requested():
     input_ids = torch.randint(0, config.vocab_size, (2, 10))
     output = model(input_ids, return_hidden_states=True)
     assert output.hidden_states.shape == (2, 10, config.hidden_size)
-    # Still returns logits/loss as normal — additive, not a replacement.
     assert output.logits.shape == (2, 10, config.vocab_size)
 
 
 def test_hidden_states_are_post_final_norm_pre_lm_head():
-    # The returned hidden_states must be exactly what lm_head was applied
-    # to, not some other intermediate tensor — verified by re-running
-    # lm_head on the returned hidden_states and checking it reproduces
-    # the real logits exactly.
     config = _tiny_architecture()
     model = DaraLMTransformer(config)
     model.eval()
@@ -126,19 +103,7 @@ def test_seq_len_beyond_max_position_embeddings_raises():
         model(input_ids)
 
 
-# --- weight initialization -----------------------------------------------
-
-
 def test_initial_loss_is_close_to_uniform_baseline():
-    """A freshly-initialized, untrained model should predict roughly
-    uniformly over the vocabulary, giving a loss near ln(vocab_size).
-
-    This is a regression test for a real bug caught during development:
-    without a proper (GPT-2-style) weight init, PyTorch's defaults left
-    logits with far too much variance at init — observed losses of ~127
-    (tiny) and ~510 (50m) instead of ~9.7 for vocab_size=16,000. See
-    `DaraLMTransformer._init_weights`'s docstring for the full story.
-    """
     torch.manual_seed(0)
     config = _tiny_architecture(vocab_size=16000)
     model = DaraLMTransformer(config)
@@ -146,12 +111,7 @@ def test_initial_loss_is_close_to_uniform_baseline():
     output = model(input_ids, labels=input_ids)
 
     expected = math.log(config.vocab_size)
-    # Generous tolerance — this checks "in the right ballpark", not an
-    # exact value, since it depends on the random seed and model size.
     assert abs(output.loss.item() - expected) < 2.0
-
-
-# --- loss --------------------------------------------------------------
 
 
 def test_loss_is_computed_when_labels_given():
@@ -172,14 +132,10 @@ def test_loss_ignores_pad_tokens():
     labels_with_padding[:, -2:] = 0  # pad out the last two target positions
 
     output_padded = model(input_ids, labels=labels_with_padding)
-    # Loss should be finite and computed only over non-pad targets.
     assert torch.isfinite(output_padded.loss)
 
 
 def test_loss_decreases_when_overfitting_one_batch():
-    """A minimal sanity check in the spirit of spec section 18/19: a tiny
-    model should be able to drive down its loss on a single fixed batch.
-    """
     torch.manual_seed(0)
     config = _tiny_architecture(vocab_size=20, hidden_size=16, num_layers=2, num_attention_heads=2)
     model = DaraLMTransformer(config)
@@ -201,9 +157,6 @@ def test_loss_decreases_when_overfitting_one_batch():
     assert last_loss < first_loss
 
 
-# --- weight tying --------------------------------------------------------
-
-
 def test_lm_head_is_tied_to_token_embedding():
     config = _tiny_architecture()
     model = DaraLMTransformer(config)
@@ -215,12 +168,8 @@ def test_num_parameters_excludes_tied_weights_by_default():
     model = DaraLMTransformer(config)
     tied_count = model.num_parameters(exclude_tied=True)
     untied_count = model.num_parameters(exclude_tied=False)
-    # The tied embedding/LM-head matrix is counted twice when not excluded.
     assert untied_count > tied_count
     assert untied_count - tied_count == config.vocab_size * config.hidden_size
-
-
-# --- parameter count matches the Phase 0 estimator --------------------------
 
 
 @pytest.mark.parametrize(
@@ -240,7 +189,6 @@ def test_param_count_matches_estimator(overrides):
 
 
 def test_real_configs_param_count_matches_estimator():
-    """End-to-end check against the actual shipped configs, not just synthetic ones."""
     from daralm.model.config import ModelConfig
 
     module = _load_inspect_model_config_module()
@@ -250,9 +198,6 @@ def test_real_configs_param_count_matches_estimator():
         estimated = module.estimate_parameters(config.architecture)
         actual = model.num_parameters(exclude_tied=True)
         assert actual == estimated, f"{config_path}: estimated {estimated}, actual {actual}"
-
-
-# --- end-to-end causal property --------------------------------------------
 
 
 def test_full_model_has_no_access_to_future_tokens():
@@ -274,15 +219,6 @@ def test_full_model_has_no_access_to_future_tokens():
     assert torch.allclose(logits_a[:, :cutoff, :], logits_b[:, :cutoff, :], atol=1e-5)
 
 
-# --- KV cache: the real optimization, tested for the property that
-# actually matters — cached generation must produce bit-identical results
-# to full recomputation, not just "run without crashing". A cache that
-# returns *different* logits than the uncached path would be a silent
-# correctness bug, worse than no cache at all (see
-# daralm.model.attention.CausalSelfAttention.forward's docstring for why
-# this optimization exists).
-
-
 def test_cache_is_none_by_default():
     config = _tiny_architecture()
     model = DaraLMTransformer(config)
@@ -299,19 +235,11 @@ def test_use_cache_returns_one_kv_pair_per_layer():
     assert output.past_key_values is not None
     assert len(output.past_key_values) == 3
     for key, value in output.past_key_values:
-        # (batch, heads, seq_len, head_dim)
         assert key.shape == (1, config.num_attention_heads, 5, config.head_dim)
         assert value.shape == (1, config.num_attention_heads, 5, config.head_dim)
 
 
 def test_cached_incremental_generation_matches_full_recomputation():
-    """The critical correctness property: feeding a prompt token-by-token
-    with a growing KV cache must produce exactly the same logits, at every
-    position, as feeding the whole sequence at once with no cache at all.
-    If RoPE's position offset or the causal mask's cache-aware slicing
-    were wrong, this is the test that would catch it — shape-only tests
-    would not.
-    """
     torch.manual_seed(0)
     config = _tiny_architecture(dropout=0.0)
     model = DaraLMTransformer(config)
@@ -323,9 +251,6 @@ def test_cached_incremental_generation_matches_full_recomputation():
     with torch.no_grad():
         full_logits = model(input_ids).logits  # (1, seq_len, vocab_size), no cache
 
-        # Now the same sequence, one new token at a time, threading the
-        # cache through — this is exactly the loop
-        # daralm.inference.generator.generate uses.
         past_key_values = None
         cached_logits = []
         for t in range(seq_len):

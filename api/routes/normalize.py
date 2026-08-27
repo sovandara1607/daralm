@@ -1,11 +1,4 @@
-"""POST /v1/normalize — Khmer text normalization.
-
-Unlike every other route in this package, this one has **no model
-dependency** — `daralm.data.khmer_normalize` is pure text processing, no
-tokenizer or loaded checkpoint involved. So this route doesn't use
-`get_model_service` at all, and works even before the model finishes
-loading (same reasoning `/metrics` already applies for a different reason).
-"""
+"""POST /v1/normalize — Khmer text normalization."""
 
 from __future__ import annotations
 

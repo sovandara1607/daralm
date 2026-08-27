@@ -1,19 +1,5 @@
 #!/usr/bin/env python
-"""Supervised fine-tune DaraLM-50M Base into DaraLM-50M-Instruct (Phase 9).
-
-Unlike scripts/train.py (which trains a model from randomly initialized
-weights), this script *starts* from a trained Base checkpoint's weights and
-continues training on instruction/response pairs with loss masking
-(daralm.data.dataset.InstructionDataset) — the SFT step from spec section
-24. Optimizer/scheduler state is deliberately NOT loaded from Base: SFT is
-a new training phase with its own (much lower) learning rate and its own
-short schedule, not a resumption of the pretraining run.
-
-Usage:
-    python scripts/train_sft.py \\
-        --config configs/50m-instruct.yaml \\
-        --base-checkpoint checkpoints/daralm-50m/best
-"""
+"""Supervised fine-tune DaraLM-50M Base into DaraLM-50M-Instruct (Phase 9)."""
 
 from __future__ import annotations
 
@@ -36,15 +22,7 @@ from daralm.utils.seed import set_seed  # noqa: E402
 
 logger = get_logger(__name__)
 
-# Instruction examples are much shorter than base-pretraining blocks (see
-# the empirical token-length measurement in the Phase 9 dev log: p99 ~344,
-# max ~490 tokens with the trained tokenizer + chat template). 512 covers
-# every example in the current dataset with room to spare, while staying
-# well under the architecture's max_position_embeddings=1024 — those are
-# two different things: max_position_embeddings sizes the position
-# embedding table (fixed by the architecture, must match Base to load its
-# weights), while block_size here just controls how much each SFT example
-# is padded to.
+# Instruction examples use shorter blocks than base pretraining.
 DEFAULT_BLOCK_SIZE = 512
 
 
@@ -88,9 +66,7 @@ def main() -> None:
     train_records = load_jsonl(
         args.data_dir / "instructions_train.jsonl", required_field="instruction"
     )
-    val_records = load_jsonl(
-        args.data_dir / "instructions_val.jsonl", required_field="instruction"
-    )
+    val_records = load_jsonl(args.data_dir / "instructions_val.jsonl", required_field="instruction")
     train_dataset = InstructionDataset(train_records, tokenizer, block_size=args.block_size)
     val_dataset = InstructionDataset(val_records, tokenizer, block_size=args.block_size)
     logger.info(
@@ -106,11 +82,6 @@ def main() -> None:
     model = DaraLMTransformer(config.architecture, pad_token_id=tokenizer.pad_id)
     logger.info("Model parameters: %s", f"{model.num_parameters():,}")
 
-    # Load Base's *weights only* — no optimizer/scheduler state. SFT starts
-    # a fresh optimizer (built by Trainer.__init__ from this config's own
-    # training hyperparameters) and a fresh step counter at 0, so
-    # checkpoints/daralm-50m-instruct/ reads as "steps of SFT", not a
-    # continuation of Base's step count.
     load_checkpoint(args.base_checkpoint, model, tokenizer_path=args.tokenizer)
     logger.info("Initialized weights from Base checkpoint: %s", args.base_checkpoint)
 

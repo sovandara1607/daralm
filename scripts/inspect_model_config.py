@@ -1,19 +1,5 @@
 #!/usr/bin/env python
-"""Inspect a DaraLM model config: validate it and report its shape.
-
-Loads a YAML config, validates it against the Pydantic schema in
-`daralm.model.config`, and prints the architecture summary, an estimated
-parameter count, and estimated memory usage — all computed purely from
-config *numbers*, without instantiating a `daralm.model.DaraLMTransformer`.
-This stays useful even after Phase 3 (the real model now exists) as a fast,
-dependency-light way to sanity-check a new config size before spending the
-time to actually build it — see `tests/test_model.py::test_param_count_matches_estimator`
-for the check that this formula and the real model agree exactly.
-
-Usage:
-    python scripts/inspect_model_config.py --config configs/50m.yaml
-    python scripts/inspect_model_config.py --config configs/tiny.yaml
-"""
+"""Inspect a DaraLM model config: validate it and report its shape."""
 
 from __future__ import annotations
 
@@ -29,36 +15,11 @@ from daralm.utils.logging import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
 
-# Bytes per parameter for each supported training precision.
 _BYTES_PER_PARAM = {"fp32": 4, "fp16": 2, "bf16": 2}
 
 
 def estimate_parameters(arch: ArchitectureConfig) -> int:
-    """Estimate total parameter count for DaraLM's decoder-only Transformer.
-
-    This formula now mirrors the real architecture built in Phase 3
-    (`daralm.model.transformer.DaraLMTransformer`) exactly — it is
-    cross-checked against `model.num_parameters()` in
-    `tests/test_model.py::test_param_count_matches_estimator`, not just a
-    plausible guess.
-
-    Per-layer breakdown for one decoder block:
-      - Self-attention (Q, K, V, O projections, no bias): 4 * H^2
-      - RMSNorm x2 (pre-attention, pre-FFN), each H params, no bias:  2 * H
-      - Feed-forward (up + down projection, no bias): 2 * H * I
-
-    Plus, once per model:
-      - Token embedding: V * H
-      - Final RMSNorm:   H
-      - LM head: 0 extra params — tied to the token embedding matrix.
-
-    Note there is no `max_position_embeddings * H` positional-embedding
-    term: DaraLM uses Rotary Position Embeddings (RoPE), which rotate
-    Query/Key vectors inside attention using a fixed (non-learned)
-    frequency table — zero parameters, unlike a learned absolute position
-    embedding table. See `daralm/model/embeddings.py` for why RoPE was
-    chosen.
-    """
+    """Estimate total parameter count for DaraLM's decoder-only Transformer."""
     h = arch.hidden_size
     i = arch.intermediate_size
     v = arch.vocab_size
@@ -78,18 +39,7 @@ def estimate_parameters(arch: ArchitectureConfig) -> int:
 
 
 def estimate_memory_bytes(total_params: int, precision: str) -> dict[str, int]:
-    """Estimate model / gradient / optimizer / total memory footprint, in bytes.
-
-    - Model memory:     total_params * bytes_per_param(precision)
-    - Gradient memory:  same dtype as the model's params -> same size as model memory
-    - Optimizer memory: AdamW keeps two extra moment tensors (first and second
-      moment) in fp32 regardless of the model's own training precision, for
-      numerical stability under mixed precision -> total_params * 4 bytes * 2
-
-    Activation memory is deliberately NOT included: unlike the above, it
-    scales with batch size and sequence length, not just the static config,
-    so it can't be estimated from architecture fields alone.
-    """
+    """Estimate model / gradient / optimizer / total memory footprint, in bytes."""
     bytes_per_param = _BYTES_PER_PARAM[precision]
     model_memory = total_params * bytes_per_param
     gradient_memory = total_params * bytes_per_param

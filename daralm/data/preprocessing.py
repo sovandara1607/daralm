@@ -1,11 +1,4 @@
-"""Filtering, quality control, and corpus statistics.
-
-`cleaner.py` provides pure text transforms; this module decides, using
-those transforms, whether a document is worth keeping at all, and reports
-on the corpus as a whole. This is where "collect -> inspect -> clean ->
-analyze" (spec section 8) actually happens — nothing here trains a model or
-touches a tokenizer, since neither exists until later phases.
-"""
+"""Filtering, quality control, and corpus statistics."""
 
 from __future__ import annotations
 
@@ -14,9 +7,6 @@ from typing import Any
 
 from daralm.data.cleaner import clean_text, corruption_ratio, detect_language, url_density
 
-# Quality thresholds. Deliberately generous — Phase 1's job is to catch
-# obviously broken documents (empty, corrupted, link-spam, pathologically
-# short/long), not to make subjective judgments about writing quality.
 MIN_CHARS = 20
 MAX_CHARS = 200_000
 MAX_CORRUPTION_RATIO = 0.01
@@ -26,12 +16,7 @@ FilterReason = str  # e.g. "empty", "too_short", "too_long", "corrupted_encoding
 
 
 def filter_reason(raw_text: str, cleaned_text: str) -> FilterReason | None:
-    """Return why a document should be dropped, or None if it passes.
-
-    Checked in a fixed order so the reported reason is deterministic and the
-    cheapest checks (on raw text, before the cost of cleaning even matters)
-    run first.
-    """
+    """Return why a document should be dropped, or None if it passes."""
     if not raw_text or not raw_text.strip():
         return "empty"
     if corruption_ratio(raw_text) > MAX_CORRUPTION_RATIO:
@@ -48,18 +33,7 @@ def filter_reason(raw_text: str, cleaned_text: str) -> FilterReason | None:
 
 
 def process_document(record: dict[str, Any]) -> tuple[dict[str, Any] | None, FilterReason | None]:
-    """Clean and quality-filter one raw record.
-
-    Args:
-        record: A raw record with at least a "text" field; "language" and
-            "source" are carried through if present.
-
-    Returns:
-        `(cleaned_record, None)` if the document passes, or
-        `(None, reason)` if it was filtered out. `cleaned_record`'s
-        "language" is the script-detected language when the input didn't
-        already specify one (or specified one we couldn't confirm).
-    """
+    """Clean and quality-filter one raw record."""
     raw_text = record.get("text", "")
     cleaned_text = clean_text(raw_text) if raw_text else ""
 
@@ -84,14 +58,7 @@ def compute_corpus_stats(
     duplicate_count: int = 0,
     total_seen: int = 0,
 ) -> dict[str, Any]:
-    """Compute corpus-level statistics (spec section 8).
-
-    `duplicate_count` / `total_seen` come from the deduplication step so the
-    duplicate rate reflects the whole pipeline, not just this record list.
-    Token-based stats (tokens, tokenizer compression ratio) are not
-    computable yet — there is no tokenizer until Phase 2 — and are reported
-    as `null` with an explanatory note rather than silently omitted.
-    """
+    """Compute corpus-level statistics (spec section 8)."""
     documents = len(records)
     total_chars = sum(len(r["text"]) for r in records)
     total_words = sum(len(r["text"].split()) for r in records)

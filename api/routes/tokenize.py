@@ -1,4 +1,4 @@
-"""POST /v1/tokenize — spec section 26."""
+"""POST /v1/tokenize."""
 
 from __future__ import annotations
 

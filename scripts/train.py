@@ -1,10 +1,4 @@
 #!/usr/bin/env python
-"""Train a DaraLM model end to end: config -> data -> tokenizer -> model -> training loop.
-
-Usage:
-    python scripts/train.py --config configs/tiny.yaml
-    python scripts/train.py --config configs/tiny.yaml --resume
-"""
 
 from __future__ import annotations
 

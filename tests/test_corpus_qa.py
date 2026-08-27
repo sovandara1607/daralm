@@ -47,8 +47,6 @@ def test_returns_none_for_too_short_text():
 
 
 def test_returns_none_when_subject_is_implausibly_long():
-    # A "subject" spanning 80+ characters before the verb is very likely a
-    # false-positive match on a mid-sentence "is"/"was", not a real title.
     text = (
         "This is a very long and unusually verbose opening clause that goes on and on "
         "before finally getting to the point and is technically still one sentence here."
@@ -58,7 +56,6 @@ def test_returns_none_when_subject_is_implausibly_long():
 
 
 def test_answer_is_verbatim_from_source_text():
-    # The whole point: never invent or paraphrase, only extract real text.
     text = (
         "The economy of Botswana is currently one of the fastest growing. "
         "Padding text follows here."

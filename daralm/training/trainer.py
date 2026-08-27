@@ -1,30 +1,4 @@
-"""The training loop.
-
-Implements the professional-training-loop checklist from spec section 11:
-mixed precision, gradient accumulation, gradient clipping, periodic
-validation, checkpointing, resume, LR scheduling, and the exact log line
-format the spec asks for. Deliberately does NOT implement gradient
-checkpointing, FlashAttention, or distributed training — those are later,
-explicitly-staged optimizations (spec section 20), not baseline-correctness
-concerns.
-
-Why gradient accumulation works: a single micro-batch of `batch_size`
-sequences may be all that fits in memory, but a larger *effective* batch
-size (`batch_size * gradient_accumulation_steps`) often trains better —
-more sequences' gradients averaged together means a less noisy update.
-Accumulation simulates that larger batch by summing (technically,
-averaging) gradients across several forward/backward passes *before*
-calling `optimizer.step()` once, rather than stepping after every
-micro-batch — mathematically equivalent to one big batch, at the cost of
-extra forward/backward passes instead of extra memory.
-
-Why validation loss matters (not just training loss): training loss only
-tells you the model is fitting the data it's *seen*. Validation loss (on
-held-out data, from `daralm.data.dataset.split_dataset`) is the only signal
-in this loop for whether the model is learning something that generalizes,
-versus memorizing the training set — the gap between the two is literally
-the definition of overfitting.
-"""
+"""The training loop."""
 
 from __future__ import annotations
 
@@ -47,42 +21,21 @@ from daralm.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Precision -> the torch dtype used inside the autocast region during the
-# forward pass. fp32 uses no autocast at all (full precision throughout).
 _AUTOCAST_DTYPE = {"fp16": torch.float16, "bf16": torch.bfloat16}
 
 
 def _gpu_memory_gb(device: torch.device) -> float | None:
-    """Current allocated device memory in GB, or None if not measurable.
-
-    CUDA and MPS expose this through different (non-interchangeable) APIs;
-    CPU has no meaningful "GPU memory" at all. Returning None (rather than
-    a string like the log line used to) lets callers decide how to display
-    or aggregate it, rather than baking formatting in here.
-    """
+    """Current allocated device memory in GB, or None if not measurable."""
     if device.type == "cuda":
         return torch.cuda.max_memory_allocated(device) / 1024**3
     if device.type == "mps":
-        # torch.mps has no "max/peak" counter like CUDA's — only current
-        # allocation. Still a genuinely useful throughput/memory signal on
-        # Apple Silicon, which this whole project has been developed and
-        # trained on; unlike CUDA there's no equivalent of nvidia-smi's
-        # utilization percentage available through PyTorch here at all.
+        # MPS reports current allocation; CUDA also reports peak allocation.
         return torch.mps.current_allocated_memory() / 1024**3
     return None
 
 
 def _unpack_batch(batch) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return (input_ids, labels) regardless of which dataset produced `batch`.
-
-    `PackedTokenDataset` (base pretraining) yields a single tensor —
-    `labels is input_ids`, matching `DaraLMTransformer.forward`'s default
-    causal-LM convention. `InstructionDataset` (Phase 9 SFT) yields
-    `(input_ids, labels)` pairs with the prompt portion of `labels` masked
-    out — PyTorch's default DataLoader collation turns a dataset of 2-tuples
-    into a 2-element list of stacked tensors, which is exactly what this
-    branch expects.
-    """
+    """Return (input_ids, labels) regardless of which dataset produced `batch`."""
     if isinstance(batch, (list, tuple)):
         input_ids, labels = batch
         return input_ids, labels
@@ -91,16 +44,12 @@ def _unpack_batch(batch) -> tuple[torch.Tensor, torch.Tensor]:
 
 @dataclass
 class TrainerState:
-    """Everything needed to resume — populated at construction or on `load_checkpoint`."""
-
     step: int = 0
     tokens_processed: int = 0
     best_val_loss: float = float("inf")
 
 
 class Trainer:
-    """Owns the model, optimizer, scheduler, and the training/eval loop for one run."""
-
     def __init__(
         self,
         config: ModelConfig,
@@ -130,17 +79,10 @@ class Trainer:
 
         precision = self.training_config.precision
         self.autocast_dtype = _AUTOCAST_DTYPE.get(precision)
-        # GradScaler is only needed for fp16 (its narrow exponent range can
-        # under/overflow small gradients); bf16 has fp32's exponent range
-        # and doesn't need one, and fp32 obviously doesn't either.
+        # Only fp16 needs gradient scaling.
         self.grad_scaler = torch.amp.GradScaler(enabled=(precision == "fp16"))
 
         self.state = TrainerState()
-        # A structured, machine-readable timeline of the run — one entry per
-        # log_interval/eval_interval event — written to history.json
-        # alongside checkpoints. This is what Phase 6's analysis script
-        # reads to report on training/validation loss, tokens/sec, and
-        # memory over the course of a run, rather than re-parsing log text.
         self.history: list[dict] = []
 
     def _autocast(self):
@@ -149,7 +91,7 @@ class Trainer:
         return torch.autocast(device_type=self.device.type, dtype=self.autocast_dtype)
 
     def _run_validation(self) -> float:
-        """Average loss over the full validation set. Model is returned to train mode after."""
+        """Average loss over the full validation set."""
         self.model.eval()
         total_loss = 0.0
         num_batches = 0
@@ -171,10 +113,6 @@ class Trainer:
         return total_loss / num_batches
 
     def _train_step(self, batch_iter) -> tuple[float, int]:
-        """Run one optimizer step (across `gradient_accumulation_steps` micro-batches).
-
-        Returns (loss_for_logging, tokens_processed_this_step).
-        """
         self.optimizer.zero_grad(set_to_none=True)
         accumulated_loss = 0.0
         tokens_this_step = 0
@@ -228,8 +166,8 @@ class Trainer:
 
             if self.state.step % self.training_config.log_interval == 0:
                 elapsed = time.monotonic() - step_start_time
-                tokens_per_sec = tokens_this_step * self.training_config.log_interval / max(
-                    elapsed, 1e-9
+                tokens_per_sec = (
+                    tokens_this_step * self.training_config.log_interval / max(elapsed, 1e-9)
                 )
                 gpu_memory_gb = _gpu_memory_gb(self.device)
                 gpu_memory_str = f"{gpu_memory_gb:.2f}GB" if gpu_memory_gb is not None else "n/a"
@@ -260,9 +198,6 @@ class Trainer:
                 logger.info(
                     "step=%d val_loss=%.4f perplexity=%.1f", self.state.step, val_loss, perplexity
                 )
-                # Attach to the most recent history entry if it's this same
-                # step (log_interval and eval_interval often coincide);
-                # otherwise append a val-only entry.
                 if self.history and self.history[-1]["step"] == self.state.step:
                     self.history[-1]["val_loss"] = val_loss
                     self.history[-1]["perplexity"] = perplexity

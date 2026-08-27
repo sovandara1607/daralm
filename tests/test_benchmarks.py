@@ -1,5 +1,3 @@
-"""Tests for daralm.evaluation.benchmarks — the Phase 8 cross-checkpoint evaluation."""
-
 from __future__ import annotations
 
 import json
@@ -22,27 +20,60 @@ from daralm.training.checkpoint import save_checkpoint
 from daralm.training.optimizer import build_optimizer
 from daralm.training.scheduler import build_scheduler
 
-# --- summarize_history / check_overfitting -------------------------------
-
 
 def _history_improving() -> list[dict]:
     return [
         {"step": 10, "train_loss": 9.0, "lr": 1e-4, "tokens_per_sec": 100.0, "gpu_memory_gb": 0.1},
-        {"step": 20, "train_loss": 7.0, "lr": 2e-4, "tokens_per_sec": 110.0, "gpu_memory_gb": 0.1,
-         "val_loss": 7.5, "perplexity": 1800.0},
-        {"step": 30, "train_loss": 6.0, "lr": 2e-4, "tokens_per_sec": 105.0, "gpu_memory_gb": 0.1,
-         "val_loss": 6.2, "perplexity": 490.0},
+        {
+            "step": 20,
+            "train_loss": 7.0,
+            "lr": 2e-4,
+            "tokens_per_sec": 110.0,
+            "gpu_memory_gb": 0.1,
+            "val_loss": 7.5,
+            "perplexity": 1800.0,
+        },
+        {
+            "step": 30,
+            "train_loss": 6.0,
+            "lr": 2e-4,
+            "tokens_per_sec": 105.0,
+            "gpu_memory_gb": 0.1,
+            "val_loss": 6.2,
+            "perplexity": 490.0,
+        },
     ]
 
 
 def _history_overfitting() -> list[dict]:
     return [
-        {"step": 10, "train_loss": 5.0, "lr": 1e-4, "tokens_per_sec": 100.0, "gpu_memory_gb": 0.1,
-         "val_loss": 5.5, "perplexity": 244.0},
-        {"step": 20, "train_loss": 3.0, "lr": 2e-4, "tokens_per_sec": 110.0, "gpu_memory_gb": 0.1,
-         "val_loss": 5.0, "perplexity": 148.0},  # best val
-        {"step": 30, "train_loss": 1.5, "lr": 2e-4, "tokens_per_sec": 105.0, "gpu_memory_gb": 0.1,
-         "val_loss": 6.0, "perplexity": 403.0},  # val rose from its best -> overfitting
+        {
+            "step": 10,
+            "train_loss": 5.0,
+            "lr": 1e-4,
+            "tokens_per_sec": 100.0,
+            "gpu_memory_gb": 0.1,
+            "val_loss": 5.5,
+            "perplexity": 244.0,
+        },
+        {
+            "step": 20,
+            "train_loss": 3.0,
+            "lr": 2e-4,
+            "tokens_per_sec": 110.0,
+            "gpu_memory_gb": 0.1,
+            "val_loss": 5.0,
+            "perplexity": 148.0,
+        },  # best val
+        {
+            "step": 30,
+            "train_loss": 1.5,
+            "lr": 2e-4,
+            "tokens_per_sec": 105.0,
+            "gpu_memory_gb": 0.1,
+            "val_loss": 6.0,
+            "perplexity": 403.0,
+        },  # val rose from its best -> overfitting
     ]
 
 
@@ -79,9 +110,6 @@ def test_check_overfitting_insufficient_data_missing_loss_keys():
     assert result["verdict"] == "insufficient data"
 
 
-# --- load_history_or_meta -------------------------------------------------
-
-
 def test_load_history_or_meta_prefers_history_json(tmp_path):
     ckpt_dir = tmp_path / "daralm-x"
     ckpt_dir.mkdir()
@@ -113,9 +141,6 @@ def test_load_history_or_meta_falls_back_to_meta_json(tmp_path):
 def test_load_history_or_meta_raises_when_neither_exists(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_history_or_meta(tmp_path / "nonexistent")
-
-
-# --- evaluate_checkpoint / compare_checkpoints (integration) ---------------
 
 
 @pytest.fixture(scope="module")
@@ -165,13 +190,20 @@ def _make_checkpoint(tmp_path_factory, tmp_path, tokenizer, name, with_history):
     if with_history:
         history = [
             {
-                "step": 5, "train_loss": 8.0, "lr": 1e-4,
-                "tokens_per_sec": 50.0, "gpu_memory_gb": 0.05,
+                "step": 5,
+                "train_loss": 8.0,
+                "lr": 1e-4,
+                "tokens_per_sec": 50.0,
+                "gpu_memory_gb": 0.05,
             },
             {
-                "step": 10, "train_loss": 6.0, "lr": 1e-4,
-                "tokens_per_sec": 55.0, "gpu_memory_gb": 0.05,
-                "val_loss": 6.5, "perplexity": 665.0,
+                "step": 10,
+                "train_loss": 6.0,
+                "lr": 1e-4,
+                "tokens_per_sec": 55.0,
+                "gpu_memory_gb": 0.05,
+                "val_loss": 6.5,
+                "perplexity": 665.0,
             },
         ]
         (ckpt_dir / "history.json").write_text(json.dumps(history))

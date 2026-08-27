@@ -1,372 +1,51 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>DaraLM</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>DaraLM Workbench</title>
 <style>
-  :root {
-    color-scheme: light dark;
-    --ink: #1d1a17;
-    --ink-soft: #5c5650;
-    --paper: #faf6f0;
-    --panel: #ffffff;
-    --line: #e4dcd0;
-    --accent: #a8492f;
-    --accent-ink: #ffffff;
-    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
-    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --ink: #f1ece4;
-      --ink-soft: #b8afa2;
-      --paper: #17130f;
-      --panel: #201b16;
-      --line: #382f26;
-      --accent: #e0774f;
-      --accent-ink: #1a1310;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: var(--serif);
-    background: var(--paper);
-    color: var(--ink);
-    display: flex;
-    justify-content: center;
-    padding: 2.5rem 1.25rem 4rem;
-  }
-  main { width: 100%; max-width: 760px; }
-  header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 0.5rem 1.5rem;
-    border-bottom: 1px solid var(--line);
-    padding-bottom: 1rem;
-    margin-bottom: 1.75rem;
-  }
-  h1 {
-    font-size: 1.6rem;
-    margin: 0;
-    letter-spacing: 0.01em;
-  }
-  h1 em { color: var(--accent); font-style: normal; }
-  #modelInfo {
-    font-family: var(--mono);
-    font-size: 0.72rem;
-    color: var(--ink-soft);
-    text-align: right;
-    line-height: 1.5;
-  }
-  .disclaimer {
-    font-size: 0.85rem;
-    color: var(--ink-soft);
-    margin-bottom: 1.75rem;
-    line-height: 1.5;
-  }
-  nav {
-    display: flex;
-    gap: 0.25rem;
-    margin-bottom: 1.25rem;
-    border-bottom: 1px solid var(--line);
-  }
-  nav button {
-    font-family: inherit;
-    font-size: 0.9rem;
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    color: var(--ink-soft);
-    padding: 0.6rem 0.9rem;
-    cursor: pointer;
-  }
-  nav button.active { color: var(--ink); border-bottom-color: var(--accent); }
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 1.25rem;
-  }
-  .tab { display: none; }
-  .tab.active { display: block; }
-  label {
-    display: block;
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--ink-soft);
-    margin: 0.9rem 0 0.35rem;
-  }
-  label:first-child { margin-top: 0; }
-  textarea, input[type="text"] {
-    width: 100%;
-    font-family: var(--serif);
-    font-size: 1rem;
-    color: var(--ink);
-    background: var(--paper);
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 0.6rem 0.7rem;
-    resize: vertical;
-  }
-  textarea { min-height: 4.5rem; }
-  .sliders {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0 1.25rem;
-  }
-  .slider-row { display: flex; align-items: center; gap: 0.5rem; }
-  .slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
-  .slider-row output {
-    font-family: var(--mono);
-    font-size: 0.78rem;
-    color: var(--ink-soft);
-    min-width: 2.6em;
-    text-align: right;
-  }
-  button.submit {
-    font-family: inherit;
-    font-size: 0.9rem;
-    background: var(--accent);
-    color: var(--accent-ink);
-    border: none;
-    border-radius: 6px;
-    padding: 0.6rem 1.3rem;
-    margin-top: 1.1rem;
-    cursor: pointer;
-  }
-  button.submit:disabled { opacity: 0.5; cursor: progress; }
-  .result {
-    margin-top: 1.25rem;
-    padding-top: 1.1rem;
-    border-top: 1px solid var(--line);
-  }
-  .result[hidden] { display: none; }
-  .result pre {
-    font-family: var(--serif);
-    font-size: 1rem;
-    white-space: pre-wrap;
-    word-break: break-word;
-    margin: 0 0 0.6rem;
-    line-height: 1.55;
-  }
-  .result .meta {
-    font-family: var(--mono);
-    font-size: 0.74rem;
-    color: var(--ink-soft);
-  }
-  .error {
-    color: var(--accent);
-    font-family: var(--mono);
-    font-size: 0.82rem;
-    margin-top: 1rem;
-    white-space: pre-wrap;
-  }
-  .tok-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    margin-top: 0.6rem;
-  }
-  .tok {
-    font-family: var(--mono);
-    font-size: 0.76rem;
-    background: var(--paper);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 0.15rem 0.4rem;
-  }
+:root{--navy:#17213b;--navy2:#24304f;--indigo:#4e5aa8;--indigo-soft:#e9ebf8;--saffron:#d88a27;--paper:#f4f2ed;--surface:#fcfbf8;--ink:#1d2433;--muted:#697083;--line:#deddd8;--good:#28755d;--bad:#b9473e;--sans:Inter,Avenir,"Noto Sans Khmer","Khmer OS System",system-ui,sans-serif;--display:Charter,"Noto Serif Khmer","Khmer OS Siemreap",Georgia,serif;--mono:"SFMono-Regular",Consolas,monospace}
+*{box-sizing:border-box}body{margin:0;min-width:320px;min-height:100vh;background:var(--paper);color:var(--ink);font:15px/1.5 var(--sans)}button,input,textarea,select{font:inherit}button{cursor:pointer}:focus-visible{outline:3px solid #4e5aa866;outline-offset:3px}[hidden]{display:none!important}
+.shell{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh}.rail{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;padding:28px 20px 20px;background:var(--navy);color:white}.brand{display:flex;align-items:center;gap:12px;margin:0 8px 34px}.brand-mark{width:40px;height:40px;display:grid;place-items:center;border:1px solid #ffffff55;border-radius:12px;color:#ffd89d;font:700 23px/1 var(--display)}.brand-name{font:700 18px/1 var(--display)}.brand small{display:block;margin-top:6px;color:#aeb6ce;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase}.nav-label{margin:0 10px 8px;color:#7f8aa8;font:700 10px var(--mono);letter-spacing:.12em;text-transform:uppercase}.nav{display:grid;gap:5px}.nav button{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border:0;border-radius:9px;background:transparent;color:#cbd1e0;text-align:left}.nav button:hover{background:#ffffff12;color:white}.nav button.active{background:var(--navy2);color:white;box-shadow:inset 3px 0 var(--saffron)}.icon{width:22px;color:#aab2c8;font:700 11px var(--mono)}.rail-foot{margin-top:auto;padding:20px 10px 0;color:#929bb5;font-size:11px}.rail-foot a{color:#d8deec}
+.main{min-width:0}.topbar{position:sticky;top:0;z-index:4;height:72px;display:flex;align-items:center;justify-content:space-between;padding:0 clamp(20px,4vw,56px);border-bottom:1px solid var(--line);background:#f4f2edeb;backdrop-filter:blur(12px)}.crumb{color:var(--muted);font-size:13px}.crumb strong{color:var(--ink)}.status{display:flex;align-items:center;gap:9px;color:var(--muted);font:600 12px var(--mono)}.dot{width:8px;height:8px;border-radius:50%;background:#9b9fac;box-shadow:0 0 0 4px #6970831f}.dot.on{background:var(--good);box-shadow:0 0 0 4px #28755d24}.dot.off{background:var(--bad);box-shadow:0 0 0 4px #b9473e21}.menu{display:none;border:0;background:transparent;font-size:20px}.content{max-width:1240px;margin:auto;padding:48px clamp(20px,4vw,56px) 72px}.view{display:none;animation:enter .2s ease}.view.active{display:block}@keyframes enter{from{opacity:0;transform:translateY(5px)}}
+.eyebrow{margin:0 0 10px;color:var(--indigo);font:700 11px var(--mono);letter-spacing:.12em;text-transform:uppercase}h1,h2,h3,p{margin-top:0}h1{max-width:800px;margin-bottom:12px;font:600 clamp(35px,5vw,58px)/1.04 var(--display);letter-spacing:-.035em}h2{margin-bottom:8px;font:600 clamp(28px,3vw,39px)/1.12 var(--display);letter-spacing:-.02em}h3{font-size:15px}.lede{max-width:740px;color:var(--muted);font-size:16px;line-height:1.65}.page-head{margin-bottom:30px}
+.model{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(110px,.55fr));margin:34px 0 26px;overflow:hidden;border-radius:16px;background:var(--navy);color:white;box-shadow:0 18px 50px #17213b14}.model-title,.model-stat{padding:26px 28px}.model-title span,.model-stat span{display:block;color:#aeb7d1;font:700 10px var(--mono);letter-spacing:.1em;text-transform:uppercase}.model-title strong{font:600 24px var(--display)}.model-stat{border-left:1px solid #ffffff1f}.model-stat strong{display:block;margin-top:10px;color:#fff1d8;font:600 18px var(--mono)}.cap-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.cap{display:grid;grid-template-columns:46px 1fr auto;align-items:center;gap:15px;min-height:104px;padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:inherit;text-align:left}.cap:hover{border-color:#b9bedb;transform:translateY(-2px);box-shadow:0 12px 32px #17213b12}.glyph{width:46px;height:46px;display:grid;place-items:center;border-radius:12px;background:var(--indigo-soft);color:var(--indigo);font:700 14px var(--mono)}.cap:nth-child(3n+2) .glyph{background:#fff1d8;color:#a45e0d}.cap strong{display:block;margin-bottom:5px;font-size:14px}.cap p{margin:0;color:var(--muted);font-size:12px}.arrow{color:#9ba0af;font-size:18px}.pill{display:inline-block;padding:5px 8px;border-radius:99px;background:var(--indigo-soft);color:var(--indigo);font:700 10px var(--mono)}.footnote{margin-top:32px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+.workspace{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:18px;align-items:start}.card{border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 8px 30px #17213b09}.card-head{padding:21px 22px 17px;border-bottom:1px solid var(--line)}.card-head h3{margin-bottom:4px}.card-head p{margin:0;color:var(--muted);font-size:12px}.card-body{padding:22px}label{display:block;margin-bottom:8px;color:#474e60;font-size:12px;font-weight:700}textarea,input[type=text],input[type=number],select{width:100%;padding:12px 13px;border:1px solid #d5d5d0;border-radius:10px;background:white;color:var(--ink)}textarea{min-height:156px;resize:vertical;line-height:1.65;font-family:var(--sans);font-size:16px}textarea:focus,input:focus,select:focus{border-color:var(--indigo);box-shadow:0 0 0 3px #4e5aa81c;outline:none}.examples{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.example{padding:6px 10px;border:1px solid var(--line);border-radius:99px;background:transparent;color:var(--muted);font-size:11px}.example:hover{border-color:var(--indigo);color:var(--indigo)}details{margin-top:18px;padding-top:15px;border-top:1px solid var(--line)}summary{color:var(--indigo);font-size:12px;font-weight:700;cursor:pointer}.controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:17px}.range{display:flex;align-items:center;gap:10px}input[type=range]{width:100%;accent-color:var(--indigo)}output{min-width:42px;text-align:right;color:var(--muted);font:700 11px var(--mono)}.check{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.check input{width:16px;height:16px;accent-color:var(--indigo)}.actions{display:flex;align-items:center;gap:10px;margin-top:22px}.primary{padding:11px 17px;border:0;border-radius:10px;background:var(--indigo);color:white;font-weight:700;box-shadow:0 6px 16px #4e5aa82e}.primary:hover{transform:translateY(-1px)}.primary:disabled{opacity:.55;cursor:wait;transform:none}.secondary{padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:white;color:var(--ink);font-size:12px;font-weight:650}.route{margin-left:auto;color:#8b91a0;font:11px var(--mono)}
+.inspector{position:sticky;top:90px;min-height:378px}.inspect-head{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line)}.inspect-head h3{margin:0}.latency{color:var(--muted);font:11px var(--mono)}.empty{min-height:290px;display:grid;place-items:center;padding:35px;text-align:center;color:var(--muted)}.empty-mark{width:62px;height:62px;display:grid;place-items:center;margin:0 auto 16px;border:1px dashed #bbc0cf;border-radius:18px;color:var(--indigo);font:600 24px var(--display)}.empty p{max-width:230px;margin:0;font-size:12px}.result{padding:18px}.answer{margin:0 0 16px;white-space:pre-wrap;overflow-wrap:anywhere;font:17px/1.7 var(--display)}.meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px}.raw,.metric-text{max-height:300px;overflow:auto;margin:0;padding:13px;border-radius:9px;background:#20283c;color:#dfe4f2;font:11px/1.65 var(--mono);white-space:pre-wrap;word-break:break-word}.metric-text{max-height:520px;color:#cde6dc;white-space:pre}.error{padding:14px;border-left:3px solid var(--bad);border-radius:5px;background:#fff0ee;color:#8e302a;font-size:12px;white-space:pre-wrap}.tokens{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}.token{display:inline-grid;grid-template-columns:auto auto;overflow:hidden;border:1px solid #ccd0df;border-radius:7px;background:white}.piece{padding:6px 7px;font:12px var(--mono)}.id{padding:6px;background:var(--indigo-soft);color:var(--indigo);font:10px var(--mono)}
+@media(max-width:900px){.shell{grid-template-columns:1fr}.rail{position:fixed;z-index:20;inset:0 auto 0 0;width:264px;transform:translateX(-100%);transition:transform .2s;box-shadow:10px 0 30px #0003}body.menu-open .rail{transform:none}.menu{display:block}.workspace{grid-template-columns:1fr}.inspector{position:static}.model{grid-template-columns:repeat(3,1fr)}.model-title{grid-column:1/-1}.model-stat:first-of-type{border-left:0}}@media(max-width:620px){.content{padding-top:32px}.cap-grid,.controls{grid-template-columns:1fr}.model{grid-template-columns:1fr}.model-title,.model-stat{padding:20px;border-left:0;border-top:1px solid #ffffff1f}.model-title{border-top:0}.route{display:none}}@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>Dara<em>LM</em></h1>
-    <div id="modelInfo">loading model info&hellip;</div>
-  </header>
-  <p class="disclaimer">
-    A from-scratch decoder-only Transformer for Khmer + English — an educational/portfolio
-    project, not a production model. Outputs are frequently fluent-sounding but factually
-    wrong; see the model cards in the
-    <a href="https://github.com/sovandara1607/daralm" target="_blank" rel="noopener">GitHub repo</a>
-    for honest, documented limitations.
-  </p>
+<div class="shell">
+<aside class="rail" aria-label="Workbench navigation"><div class="brand"><div class="brand-mark">ដ</div><div><div class="brand-name">DaraLM</div><small>Model workbench</small></div></div><div class="nav-label">Inspect</div><nav class="nav"><button class="active" data-view="overview"><span class="icon">⌂</span>Overview</button><button data-view="chat"><span class="icon">AI</span>Chat</button><button data-view="generate"><span class="icon">→</span>Generate</button><button data-view="tokenize"><span class="icon">#</span>Tokenize</button><button data-view="normalize"><span class="icon">ក</span>Normalize Khmer</button><button data-view="metrics"><span class="icon">∿</span>Metrics</button></nav><div class="rail-foot">Built for honest model testing.<br>Outputs may be fluent but factually wrong.<br><a href="/docs" target="_blank">Open API docs ↗</a></div></aside>
+<main class="main"><header class="topbar"><button class="menu" aria-label="Open menu">☰</button><div class="crumb">Workbench / <strong id="viewName">Overview</strong></div><div class="status"><span class="dot" id="dot"></span><span id="statusText">Checking API</span></div></header><div class="content">
+<section class="view active" id="view-overview"><p class="eyebrow">From-scratch Khmer + English transformer</p><h1>Put the whole model under a microscope.</h1><p class="lede">Exercise every public API route, tune sampling, inspect subword boundaries, and read the unpolished response payloads in one place.</p><div class="model"><div class="model-title"><span>Loaded checkpoint</span><strong id="modelName">Waiting for model…</strong></div><div class="model-stat"><span>Parameters</span><strong id="params">—</strong></div><div class="model-stat"><span>Context</span><strong id="context">—</strong></div><div class="model-stat"><span>Device</span><strong id="device">—</strong></div></div><div class="cap-grid"><button class="cap" data-go="chat"><span class="glyph">AI</span><span><strong>Instruction chat</strong><p>Test the chat template with full sampling control.</p></span><span class="arrow">›</span></button><button class="cap" data-go="generate"><span class="glyph">→</span><span><strong>Raw completion</strong><p>Continue Khmer or English text from a prompt.</p></span><span class="arrow">›</span></button><button class="cap" data-go="tokenize"><span class="glyph">#</span><span><strong>Tokenizer lens</strong><p>Pair every subword piece with its vocabulary ID.</p></span><span class="arrow">›</span></button><button class="cap" data-go="normalize"><span class="glyph">ក</span><span><strong>Khmer normalization</strong><p>Clean punctuation spacing and convert numerals.</p></span><span class="arrow">›</span></button><button class="cap" data-go="metrics"><span class="glyph">∿</span><span><strong>Runtime metrics</strong><p>Inspect Prometheus counters and latency data.</p></span><span class="arrow">›</span></button><div class="cap"><span class="glyph">i</span><span><strong>Model metadata</strong><p id="details">Architecture data appears when ready.</p></span><span class="pill" id="step">step —</span></div></div><p class="footnote">This console presents what the running server can actually do today. Offline experimental heads are not mislabeled as production endpoints.</p></section>
 
-  <nav>
-    <button data-tab="chat" class="active">Chat</button>
-    <button data-tab="generate">Generate</button>
-    <button data-tab="tokenize">Tokenize</button>
-  </nav>
+<section class="view" id="view-chat"><div class="page-head"><p class="eyebrow">Instruction endpoint</p><h2>Chat with the loaded checkpoint.</h2><p class="lede">Best with an instruction-tuned checkpoint. A Base checkpoint accepts this request but has not learned the chat markers.</p></div><div class="workspace"><form class="card tool" data-kind="chat" data-endpoint="/v1/chat"><div class="card-head"><h3>Instruction</h3><p>Wrapped in DaraLM’s user/assistant template.</p></div><div class="card-body"><label for="chatInput">Your message</label><textarea id="chatInput" required>សូមសរសេរប្រយោគខ្លីមួយអំពីប្រទេសកម្ពុជា។</textarea><div class="examples"><button type="button" class="example" data-fill="chatInput" data-text="What is 2 + 2?">Simple fact</button><button type="button" class="example" data-fill="chatInput" data-text="សូមពន្យល់អំពីប្រទេសកម្ពុជា។">Khmer prompt</button></div><details><summary>Sampling controls</summary><div class="controls" data-controls="chat"></div></details><div class="actions"><button class="primary" type="submit">Send instruction</button><button class="secondary clear" type="button">Clear result</button><span class="route">POST /v1/chat</span></div></div></form><aside class="card inspector"><div class="inspect-head"><h3>Response</h3><span class="latency">not run</span></div><div class="inspect-body"><div class="empty"><div><div class="empty-mark">ដ</div><p>Run an instruction to inspect text, token count, timing, and raw JSON.</p></div></div></div></aside></div></section>
 
-  <section class="panel">
-    <form id="chat" class="tab active" data-endpoint="/v1/chat">
-      <label for="chat-instruction">Instruction</label>
-      <textarea id="chat-instruction" required placeholder="What is the capital of France?"></textarea>
-      <div class="sliders">
-        <div>
-          <label>Max new tokens</label>
-          <div class="slider-row">
-            <input type="range" id="chat-max_new_tokens" min="10" max="300" step="10" value="150" />
-            <output>150</output>
-          </div>
-        </div>
-        <div>
-          <label>Temperature</label>
-          <div class="slider-row">
-            <input type="range" id="chat-temperature" min="0" max="1.5" step="0.1" value="0.8" />
-            <output>0.8</output>
-          </div>
-        </div>
-      </div>
-      <button type="submit" class="submit">Send</button>
-      <div class="result" hidden></div>
-    </form>
+<section class="view" id="view-generate"><div class="page-head"><p class="eyebrow">Language modeling endpoint</p><h2>Continue text without a chat template.</h2><p class="lede">Use raw generation to examine what the Base model predicts directly after your prompt.</p></div><div class="workspace"><form class="card tool" data-kind="generate" data-endpoint="/v1/generate"><div class="card-head"><h3>Seed text</h3><p>The response includes your prompt and its continuation.</p></div><div class="card-body"><label for="generateInput">Prompt</label><textarea id="generateInput" required>ប្រទេសកម្ពុជា</textarea><div class="examples"><button type="button" class="example" data-fill="generateInput" data-text="Cambodia is">English</button><button type="button" class="example" data-fill="generateInput" data-text="ប្រទេសកម្ពុជា">Khmer</button><button type="button" class="example" data-fill="generateInput" data-text="Machine learning is">Technical</button></div><details><summary>Sampling controls</summary><div class="controls" data-controls="generate"></div></details><div class="actions"><button class="primary" type="submit">Generate continuation</button><button class="secondary clear" type="button">Clear result</button><span class="route">POST /v1/generate</span></div></div></form><aside class="card inspector"><div class="inspect-head"><h3>Response</h3><span class="latency">not run</span></div><div class="inspect-body"><div class="empty"><div><div class="empty-mark">→</div><p>Generate text to inspect the result and raw JSON.</p></div></div></div></aside></div></section>
 
-    <form id="generate" class="tab" data-endpoint="/v1/generate">
-      <label for="generate-prompt">Prompt</label>
-      <textarea id="generate-prompt" required placeholder="Cambodia is"></textarea>
-      <div class="sliders">
-        <div>
-          <label>Max new tokens</label>
-          <div class="slider-row">
-            <input type="range" id="generate-max_new_tokens" min="10" max="300" step="10" value="100" />
-            <output>100</output>
-          </div>
-        </div>
-        <div>
-          <label>Temperature</label>
-          <div class="slider-row">
-            <input type="range" id="generate-temperature" min="0" max="1.5" step="0.1" value="0.8" />
-            <output>0.8</output>
-          </div>
-        </div>
-      </div>
-      <button type="submit" class="submit">Generate</button>
-      <div class="result" hidden></div>
-    </form>
+<section class="view" id="view-tokenize"><div class="page-head"><p class="eyebrow">SentencePiece inspection</p><h2>See exactly what the model reads.</h2><p class="lede">Reveal subword boundaries, vocabulary IDs, and optional beginning/end tokens before generation.</p></div><div class="workspace"><form class="card tool" data-kind="tokenize" data-endpoint="/v1/tokenize"><div class="card-head"><h3>Input text</h3><p>Empty text is valid when inspecting special tokens.</p></div><div class="card-body"><label for="tokenizeInput">Khmer or English text</label><textarea id="tokenizeInput">កម្ពុជាជាប្រទេសមួយនៅអាស៊ីអាគ្នេយ៍។</textarea><div class="examples"><button type="button" class="example" data-fill="tokenizeInput" data-text="ខ្ញុំចង់រៀន machine learning។">Mixed text</button><button type="button" class="example" data-fill="tokenizeInput" data-text="<user>Hello</user>">Chat marker</button></div><div class="controls"><label class="check"><input id="bos" type="checkbox"> Add &lt;bos&gt;</label><label class="check"><input id="eos" type="checkbox"> Add &lt;eos&gt;</label></div><div class="actions"><button class="primary" type="submit">Inspect tokens</button><button class="secondary clear" type="button">Clear result</button><span class="route">POST /v1/tokenize</span></div></div></form><aside class="card inspector"><div class="inspect-head"><h3>Token stream</h3><span class="latency">not run</span></div><div class="inspect-body"><div class="empty"><div><div class="empty-mark">#</div><p>Each token appears beside the exact ID passed into the neural network.</p></div></div></div></aside></div></section>
 
-    <form id="tokenize" class="tab" data-endpoint="/v1/tokenize">
-      <label for="tokenize-text">Text</label>
-      <input type="text" id="tokenize-text" required placeholder="កម្ពុជាជាប្រទេសមួយ" />
-      <button type="submit" class="submit">Tokenize</button>
-      <div class="result" hidden></div>
-    </form>
-  </section>
-</main>
+<section class="view" id="view-normalize"><div class="page-head"><p class="eyebrow">Khmer preprocessing</p><h2>Normalize text before tokenization.</h2><p class="lede">Remove stray punctuation spacing and map between Khmer and Arabic digits. No model is required.</p></div><div class="workspace"><form class="card tool" data-kind="normalize" data-endpoint="/v1/normalize"><div class="card-head"><h3>Source text</h3><p>The original stays untouched for easy comparison.</p></div><div class="card-body"><label for="normalizeInput">Text to clean</label><textarea id="normalizeInput">ប្រទេសកម្ពុជា ។ ឆ្នាំ២០២៤</textarea><label for="digits" style="margin-top:16px">Digit style</label><select id="digits"><option value="keep">Keep as written</option><option value="arabic">Convert to 0–9</option><option value="khmer">Convert to ០–៩</option></select><div class="actions"><button class="primary" type="submit">Normalize text</button><button class="secondary clear" type="button">Clear result</button><span class="route">POST /v1/normalize</span></div></div></form><aside class="card inspector"><div class="inspect-head"><h3>Normalized result</h3><span class="latency">not run</span></div><div class="inspect-body"><div class="empty"><div><div class="empty-mark">ក</div><p>Run normalization to compare cleaned text and raw JSON.</p></div></div></div></aside></div></section>
 
+<section class="view" id="view-metrics"><div class="page-head"><p class="eyebrow">Prometheus exposition</p><h2>Read the server’s pulse.</h2><p class="lede">Refresh raw counters for request volume, latency, and generated tokens.</p></div><div class="card"><div class="card-head"><h3>Runtime metrics</h3><p>Raw text from GET /metrics</p></div><div class="card-body"><div class="actions" style="margin:0 0 18px"><button class="primary" id="refreshMetrics">Refresh metrics</button><span class="latency" id="metricsLatency">not loaded</span></div><pre class="metric-text" id="metricsOutput">Select “Refresh metrics” to query the server.</pre></div></div></section>
+</div></main></div>
 <script>
-(function () {
-  const forms = document.querySelectorAll("form.tab");
-  const navButtons = document.querySelectorAll("nav button");
-
-  navButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      navButtons.forEach((b) => b.classList.toggle("active", b === btn));
-      forms.forEach((f) => f.classList.toggle("active", f.id === btn.dataset.tab));
-    });
-  });
-
-  document.querySelectorAll('input[type="range"]').forEach((slider) => {
-    const out = slider.nextElementSibling;
-    out.textContent = slider.value;
-    slider.addEventListener("input", () => { out.textContent = slider.value; });
-  });
-
-  async function loadModelInfo() {
-    const el = document.getElementById("modelInfo");
-    try {
-      const res = await fetch("/v1/model");
-      if (!res.ok) throw new Error(`${res.status}`);
-      const info = await res.json();
-      el.textContent =
-        `${info.model_name} · ${info.parameters.toLocaleString()} params · ` +
-        `step ${info.checkpoint_step} · ${info.device}`;
-    } catch (err) {
-      el.textContent = "model info unavailable (" + err.message + ")";
-    }
-  }
-  loadModelInfo();
-
-  function renderError(resultEl, message) {
-    resultEl.hidden = false;
-    resultEl.innerHTML = `<div class="error">${message}</div>`;
-  }
-
-  function renderChatOrGenerate(resultEl, body, tokensKey, textKey) {
-    resultEl.hidden = false;
-    const text = body[textKey] ?? "";
-    resultEl.innerHTML =
-      `<pre></pre><div class="meta"></div>`;
-    resultEl.querySelector("pre").textContent = text || "(empty response)";
-    resultEl.querySelector(".meta").textContent =
-      `${body.model} · ${body[tokensKey]} tokens generated`;
-  }
-
-  function renderTokenize(resultEl, body) {
-    resultEl.hidden = false;
-    const tokens = body.tokens
-      .map((t) => `<span class="tok">${t.replace(/</g, "&lt;")}</span>`)
-      .join("");
-    resultEl.innerHTML =
-      `<div class="meta">${body.token_count} tokens</div><div class="tok-row">${tokens}</div>`;
-  }
-
-  forms.forEach((form) => {
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const resultEl = form.querySelector(".result");
-      const submitBtn = form.querySelector("button.submit");
-      submitBtn.disabled = true;
-      resultEl.hidden = true;
-
-      let payload;
-      if (form.id === "chat") {
-        payload = {
-          instruction: document.getElementById("chat-instruction").value,
-          max_new_tokens: Number(document.getElementById("chat-max_new_tokens").value),
-          temperature: Number(document.getElementById("chat-temperature").value),
-        };
-      } else if (form.id === "generate") {
-        payload = {
-          prompt: document.getElementById("generate-prompt").value,
-          max_new_tokens: Number(document.getElementById("generate-max_new_tokens").value),
-          temperature: Number(document.getElementById("generate-temperature").value),
-        };
-      } else {
-        payload = { text: document.getElementById("tokenize-text").value };
-      }
-
-      try {
-        const res = await fetch(form.dataset.endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const body = await res.json();
-        if (!res.ok) {
-          const detail = Array.isArray(body.detail)
-            ? body.detail.map((d) => `${d.loc.join(".")}: ${d.msg}`).join("\n")
-            : JSON.stringify(body.detail ?? body, null, 2);
-          renderError(resultEl, detail);
-        } else if (form.id === "chat") {
-          renderChatOrGenerate(resultEl, body, "tokens_generated", "response");
-        } else if (form.id === "generate") {
-          renderChatOrGenerate(resultEl, body, "tokens_generated", "generated_text");
-        } else {
-          renderTokenize(resultEl, body);
-        }
-      } catch (err) {
-        renderError(resultEl, "Request failed: " + err.message);
-      } finally {
-        submitBtn.disabled = false;
-      }
-    });
-  });
+(()=>{"use strict";const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
+function show(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));const b=$(`.nav button[data-view="${name}"]`);$('#viewName').textContent=b?b.textContent.trim():name;document.body.classList.remove('menu-open');history.replaceState(null,'',name==='overview'?location.pathname:`#${name}`);if(name==='metrics')metrics()}
+$$('.nav button').forEach(b=>b.onclick=()=>show(b.dataset.view));$$('[data-go]').forEach(b=>b.onclick=()=>show(b.dataset.go));$('.menu').onclick=()=>document.body.classList.toggle('menu-open');document.onkeydown=e=>{if(e.key==='Escape')document.body.classList.remove('menu-open')};
+function controls(p,stop){return `<div><label for="${p}Max">Max new tokens</label><div class="range"><input id="${p}Max" type="range" min="1" max="512" value="${p==='chat'?150:100}"><output></output></div></div><div><label for="${p}Temp">Temperature</label><div class="range"><input id="${p}Temp" type="range" min="0" max="2" step=".1" value=".8"><output></output></div></div><div><label for="${p}TopP">Top-p</label><div class="range"><input id="${p}TopP" type="range" min=".05" max="1" step=".05" value=".9"><output></output></div></div><div><label for="${p}TopK">Top-k</label><input id="${p}TopK" type="number" min="0" value="0"></div><div><label for="${p}Penalty">Repetition penalty</label><div class="range"><input id="${p}Penalty" type="range" min="1" max="2" step=".05" value="1"><output></output></div></div>${stop?`<label class="check"><input id="${p}Stop" type="checkbox" checked> Stop on &lt;eos&gt;</label>`:''}`}
+$('[data-controls=chat]').innerHTML=controls('chat',false);$('[data-controls=generate]').innerHTML=controls('generate',true);$$('input[type=range]').forEach(i=>{const o=i.nextElementSibling;if(o?.tagName==='OUTPUT'){const sync=()=>o.value=i.value;sync();i.oninput=sync}});$$('[data-fill]').forEach(b=>b.onclick=()=>{const i=document.getElementById(b.dataset.fill);i.value=b.dataset.text;i.focus()});
+const compact=n=>n>=1e9?(n/1e9).toFixed(1)+'B':n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(n);async function system(){try{const[h,m]=await Promise.all([fetch('/health'),fetch('/v1/model')]);if(!h.ok||!m.ok)throw Error(`API returned ${h.status}/${m.status}`);const health=await h.json(),info=await m.json();$('#dot').className='dot on';$('#statusText').textContent=`API online · ${health.device}`;$('#modelName').textContent=info.model_name;$('#params').textContent=compact(info.parameters);$('#context').textContent=`${info.max_position_embeddings.toLocaleString()} tok`;$('#device').textContent=info.device;$('#step').textContent=`step ${info.checkpoint_step??'—'}`;$('#details').textContent=`${info.num_layers} layers · ${info.num_attention_heads} heads · hidden ${info.hidden_size} · vocab ${info.vocab_size.toLocaleString()}`}catch(e){$('#dot').className='dot off';$('#statusText').textContent='API unavailable';$('#modelName').textContent='No checkpoint connected';$('#details').textContent=e.message}}system();
+function payload(k){if(k==='chat'||k==='generate'){const b={max_new_tokens:+$(`#${k}Max`).value,temperature:+$(`#${k}Temp`).value,top_p:+$(`#${k}TopP`).value,top_k:+$(`#${k}TopK`).value,repetition_penalty:+$(`#${k}Penalty`).value};if(k==='chat')b.instruction=$('#chatInput').value;else{b.prompt=$('#generateInput').value;b.stop_on_eos=$('#generateStop').checked}return b}if(k==='tokenize')return{text:$('#tokenizeInput').value,add_bos:$('#bos').checked,add_eos:$('#eos').checked};return{text:$('#normalizeInput').value,digits:$('#digits').value}}
+function message(b,s){return Array.isArray(b?.detail)?b.detail.map(x=>`${x.loc.join('.')}: ${x.msg}`).join('\n'):typeof b?.detail==='string'?b.detail:`Request failed with status ${s}`}
+function render(form,k,b,ms){const box=form.parentElement.querySelector('.inspector');$('.latency',box).textContent=`${ms} ms`;const host=$('.inspect-body',box);host.innerHTML='';const wrap=document.createElement('div');wrap.className='result';if(k==='tokenize'){const stream=document.createElement('div');stream.className='tokens';b.tokens.forEach((p,i)=>{const chip=document.createElement('span');chip.className='token';const a=document.createElement('span'),id=document.createElement('span');a.className='piece';id.className='id';a.textContent=p||'∅';id.textContent=b.token_ids[i];chip.append(a,id);stream.append(chip)});wrap.append(stream);const meta=document.createElement('div');meta.className='meta';meta.innerHTML=`<span class="pill">${b.token_count} tokens</span>`;wrap.append(meta)}else{const answer=document.createElement('p');answer.className='answer';answer.textContent=b.response??b.generated_text??b.normalized_text??'(empty response)';wrap.append(answer);const meta=document.createElement('div');meta.className='meta';if('tokens_generated'in b)meta.innerHTML+=`<span class="pill">${b.tokens_generated} generated tokens</span>`;if(b.model)meta.innerHTML+=`<span class="pill">${b.model}</span>`;if('changed'in b)meta.innerHTML+=`<span class="pill">${b.changed?'text changed':'already normalized'}</span>`;wrap.append(meta)}const raw=document.createElement('pre');raw.className='raw';raw.textContent=JSON.stringify(b,null,2);wrap.append(raw);const copy=document.createElement('button');copy.type='button';copy.className='secondary';copy.style.marginTop='12px';copy.textContent='Copy JSON';copy.onclick=async()=>{await navigator.clipboard.writeText(raw.textContent);copy.textContent='Copied';setTimeout(()=>copy.textContent='Copy JSON',1200)};wrap.append(copy);host.append(wrap)}
+function fail(form,msg,ms){const box=form.parentElement.querySelector('.inspector');$('.latency',box).textContent=`${ms} ms`;const host=$('.inspect-body',box);host.innerHTML='';const wrap=document.createElement('div'),err=document.createElement('div');wrap.className='result';err.className='error';err.textContent=msg;wrap.append(err);host.append(wrap)}
+$$('.tool').forEach(form=>{form.onsubmit=async e=>{e.preventDefault();const btn=$('button[type=submit]',form),old=btn.textContent,start=performance.now();btn.disabled=true;btn.textContent='Running…';try{const r=await fetch(form.dataset.endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload(form.dataset.kind))}),b=await r.json(),ms=Math.round(performance.now()-start);r.ok?render(form,form.dataset.kind,b,ms):fail(form,message(b,r.status),ms)}catch(e){fail(form,`Could not reach ${form.dataset.endpoint}.\n${e.message}`,Math.round(performance.now()-start))}finally{btn.disabled=false;btn.textContent=old}};$('.clear',form).onclick=()=>{const box=form.parentElement.querySelector('.inspector');$('.latency',box).textContent='not run';$('.inspect-body',box).innerHTML='<div class="empty"><div><div class="empty-mark">·</div><p>Result cleared. Adjust the input and run another test.</p></div></div>'}});
+async function metrics(){const out=$('#metricsOutput'),label=$('#metricsLatency'),btn=$('#refreshMetrics'),start=performance.now();btn.disabled=true;try{const r=await fetch('/metrics');if(!r.ok)throw Error(`HTTP ${r.status}`);out.textContent=await r.text();label.textContent=`${Math.round(performance.now()-start)} ms · ${new Date().toLocaleTimeString()}`}catch(e){out.textContent=`Could not load /metrics\n${e.message}`;label.textContent='request failed'}finally{btn.disabled=false}}$('#refreshMetrics').onclick=metrics;const initial=location.hash.slice(1);if(['chat','generate','tokenize','normalize','metrics'].includes(initial))show(initial);
 })();
 </script>
-</body>
-</html>
+</body></html>

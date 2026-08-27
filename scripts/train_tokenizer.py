@@ -1,17 +1,5 @@
 #!/usr/bin/env python
-"""Train and evaluate DaraLM's Khmer+English tokenizer (Phase 2).
-
-Trains BOTH a BPE and a Unigram SentencePiece model on the same cleaned
-corpus and vocab size, evaluates each across four domains (Khmer, English,
-mixed Khmer-English, code/numbers/URLs), and recommends one based on the
-measured numbers — not a hard-coded preference. Per spec section 28,
-Phase 2 stops here: evaluate the tokenizer before proceeding to the
-Transformer (Phase 3).
-
-Usage:
-    python scripts/train_tokenizer.py --vocab-size 16000
-    python scripts/train_tokenizer.py --vocab-size 16000 --cleaned-dir data/cleaned
-"""
+"""Train and evaluate DaraLM's Khmer+English tokenizer (Phase 2)."""
 
 from __future__ import annotations
 
@@ -56,13 +44,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def recommend(bpe_results: dict, unigram_results: dict) -> str:
-    """Pick a winner from measured evaluation numbers, with a stated reason.
-
-    Scoring: average characters-per-token across all domains (higher =
-    better compression) minus a penalty for unknown-token rate (lower is
-    better). This is a simple, transparent heuristic — not a black box —
-    so the printed reasoning can be checked against the numbers directly.
-    """
+    """Pick a winner from measured evaluation numbers, with a stated reason."""
     domains = list(bpe_results.keys())
 
     def score(results: dict) -> float:
@@ -111,7 +93,7 @@ def main() -> None:
     bpe_tokenizer = DaraLMTokenizer.from_pretrained(bpe_model_path)
     unigram_tokenizer = DaraLMTokenizer.from_pretrained(unigram_model_path)
 
-    # Sample real Khmer/English text from the cleaned corpus for domain eval.
+    # Sample real Khmer/English text from the cleaned corpus for domain eval
     khmer_records = [
         r for r in load_jsonl(args.cleaned_dir / "val.jsonl") if r["language"] == "km"
     ] or [r for r in load_jsonl(args.cleaned_dir / "train.jsonl") if r["language"] == "km"]

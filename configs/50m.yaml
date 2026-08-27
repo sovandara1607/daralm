@@ -1,17 +1,3 @@
-# DaraLM-50M — first real pretraining target.
-#
-# ~50M parameters (see `scripts/inspect_model_config.py` for the exact
-# computed count). Decoder-only Transformer, Khmer + English.
-#
-# vocab_size note: the original spec example used 32,000. We trained the
-# actual Phase 2 tokenizer at 16,000 (within the spec's stated 16k-32k
-# range) because the current corpus (~2,700 training documents) is still
-# modest — a 32k vocab on that little data risks many merge rules that only
-# ever fire a handful of times, wasting embedding capacity on undertrained
-# tokens. Every DaraLM config must share one tokenizer, so this value has
-# to track whatever was actually trained; retrain the tokenizer at 32,000
-# once a substantially larger corpus is collected, then update this file
-# (and tiny.yaml) to match.
 
 model_name: daralm-50m
 tags: ["50m"]
@@ -32,37 +18,8 @@ training:
   learning_rate: 0.0003
   weight_decay: 0.1
   gradient_clip: 1.0
-  # batch_size=4 (not 32) is measured, not guessed. Phase 6 found a severe
-  # Apple Silicon MPS performance cliff at a certain batch*seq_len shape for
-  # DaraLM-10M (6 layers, hidden=288); this larger model (8 layers,
-  # hidden=512) hits the same pathology at an even LOWER batch size:
-  #   isolated batch=4, seq=1024: 0.70-0.82s/step steady-state, ~0.94GB
-  #   isolated batch=8, seq=1024: 10.2s for a SINGLE step (>12x slower for
-  #                                2x the data; memory was never the issue,
-  #                                only ~1.5GB)
-  # gradient_accumulation_steps=4 recovers an effective batch size of 16
-  # (down from the original placeholder's 32, given this hardware's actual
-  # measured throughput — see README's Phase 7 section for the full
-  # reasoning and how max_steps was chosen to fit a real session).
   batch_size: 4
   gradient_accumulation_steps: 4
-  # max_steps raised 300 -> 1500 (5x) after the Phase 9 SFT follow-up work
-  # found this checkpoint's own undertraining — not the instruction
-  # dataset — was the real ceiling on Instruct's generation quality (base
-  # val perplexity 573.6 at step 300 is very high; SFT can't manufacture
-  # fluency a base model never learned). Resumed via `--resume`, not
-  # restarted, so this continues from the real step-300 weights.
-  #
-  # Resuming with a larger max_steps rebuilds the cosine LR schedule
-  # against the new total (1500, not 300) before restoring the optimizer/
-  # scheduler step counter to 300 — so the learning rate jumps back up
-  # from wherever it had decayed to under the old 300-step schedule
-  # (~10% of peak, per min_lr_ratio) to ~92% of peak, then decays smoothly
-  # to 10% again by the new step 1500. This is the standard "continue
-  # pretraining longer" pattern, not a bug — but it does mean a visible LR
-  # (and likely a small transient loss) discontinuity right at step 300,
-  # worth expecting rather than mistaking for a problem when it shows up
-  # in the training log.
   max_steps: 1500
   warmup_steps: 20
   eval_interval: 50

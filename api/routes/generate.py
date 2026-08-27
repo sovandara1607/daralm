@@ -1,4 +1,4 @@
-"""POST /v1/generate — spec section 26's example endpoint."""
+"""POST /v1/generate."""
 
 from __future__ import annotations
 

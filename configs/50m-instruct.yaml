@@ -1,12 +1,3 @@
-# DaraLM-50M-Instruct — supervised fine-tune of DaraLM-50M Base (Phase 9).
-#
-# `architecture` is a byte-for-byte copy of configs/50m.yaml. It has to be:
-# scripts/train_sft.py loads the Base checkpoint's weights into a freshly
-# constructed model built from *this* config, and any architecture mismatch
-# (different hidden_size, vocab_size, etc.) would make `load_state_dict`
-# fail loudly — which is the point, but there's no reason to court it.
-# Only `training` differs, and `model_name` so checkpoints land in their own
-# `checkpoints/daralm-50m-instruct/` directory, never overwriting Base.
 
 model_name: daralm-50m-instruct
 tags: ["50m", "instruct", "sft"]
@@ -24,32 +15,11 @@ architecture:
 training:
   precision: bf16
   optimizer: adamw
-  # SFT uses a much lower LR than pretraining (3e-4) — the model already
-  # has real language ability from Base; SFT should nudge it toward
-  # following the instruction/response format, not relearn from scratch.
-  # A pretrain-sized LR on a ~300-example dataset would overfit or
-  # destroy Base's learned weights within a handful of steps.
   learning_rate: 0.00005
   weight_decay: 0.1
   gradient_clip: 1.0
-  # batch_size=4 reuses the exact shape Phase 6-7 proved safe on this
-  # hardware's MPS backend. batch=4 -> 0.510s/step, batch=8 -> 1.379s/step
-  # (a real but mild ~2.7x slowdown for 2x the data, not a cliff),
-  # batch=16 -> crashed outright with "MPS backend out of memory" (17.54
-  # GiB allocated). batch_size=4 stays the safety-margined choice.
   batch_size: 4
   gradient_accumulation_steps: 4
-  # Dataset scaled up again (784 -> 2,313 train examples, ~3x) by fetching
-  # more of the same already-vetted sources (--n-english 1500 --n-khmer
-  # 1200) — the same "scale up the existing recipe" move that measurably
-  # (if partially) helped grammar correction (README's Stage 2 item 3).
-  # 2,313 / effective batch 16 = 144.6 steps/epoch; 900 steps ~= 6.2
-  # epochs, matching the original run's ~6-epoch budget scaled to the
-  # larger dataset rather than assumed to transfer unchanged.
-  # Real token-length measurement on this dataset: max=777, p99=591 —
-  # scripts/train_sft.py's block_size must be passed explicitly at
-  # >= 832 (not its own default of 512) or ~1% of examples get silently
-  # dropped by InstructionDataset for exceeding block_size.
   max_steps: 900
   warmup_steps: 90
   eval_interval: 100

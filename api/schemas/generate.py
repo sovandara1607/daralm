@@ -1,4 +1,4 @@
-"""Request/response schema for POST /v1/generate — spec section 26's example endpoint."""
+"""Request/response schema for POST /v1/generate."""
 
 from __future__ import annotations
 
@@ -6,13 +6,6 @@ from pydantic import BaseModel, Field
 
 
 class GenerateRequest(BaseModel):
-    """Mirrors the spec's literal example request body, plus the two extra
-    sampling knobs `daralm.inference.sampling` already supports
-    (`top_k`, `repetition_penalty`) — exposed as optional so the spec's
-    exact example (`prompt`, `max_new_tokens`, `temperature`, `top_p`)
-    still works unchanged with every other field defaulting to a no-op.
-    """
-
     model_config = {"extra": "forbid"}
 
     prompt: str = Field(min_length=1, description="Seed text to continue")
@@ -27,11 +20,6 @@ class GenerateRequest(BaseModel):
 
 
 class GenerateResponse(BaseModel):
-    """Mirrors the spec's literal example response body, plus `model` for
-    basic traceability (which checkpoint actually produced this text) —
-    the one addition beyond the spec's exact two fields.
-    """
-
     generated_text: str
     tokens_generated: int
     model: str

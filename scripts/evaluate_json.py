@@ -1,30 +1,5 @@
 #!/usr/bin/env python
-"""Evaluate a structured-JSON-generation fine-tune — Stage 2, item 4 of
-`ROADMAP_NLP_PLATFORM.md`, the roadmap's explicit go/no-go gate before
-NER, tool calling, or NL-to-SQL are attempted at all.
-
-Three metrics, reported in the order `ROADMAP_NLP_PLATFORM.md` specifies
-(valid-JSON rate first, "before any downstream schema-correctness metric
-matters at all"):
-
-1. Valid-JSON rate — does the output parse as JSON at all?
-2. Schema-match rate — of the valid JSON, does it have exactly the right
-   keys (name/age/occupation/city), regardless of value correctness?
-3. Exact-value-match rate — of the valid JSON, are the actual values
-   correct too? The real, complete test.
-
-A trivial "always emit {}" baseline is reported alongside: 100% valid-JSON
-rate by construction, ~0% schema-match — proof that valid-JSON rate alone
-can be gamed and isn't sufficient evidence of real capability on its own,
-exactly the reasoning the roadmap gives for checking it first but not
-stopping there.
-
-Usage:
-    python scripts/evaluate_json.py \\
-        --config configs/50m-json.yaml \\
-        --checkpoint checkpoints/daralm-50m-json/best \\
-        --data data/structured_json/instructions_test.jsonl
-"""
+"""Evaluate a structured-JSON-generation fine-tune."""
 
 from __future__ import annotations
 
@@ -96,8 +71,11 @@ def main() -> None:
     for i, example in enumerate(examples):
         expected = parse_json_or_none(example["response"])
         generated = generate_chat(
-            model, tokenizer, example["instruction"],
-            max_new_tokens=args.max_new_tokens, temperature=args.temperature,
+            model,
+            tokenizer,
+            example["instruction"],
+            max_new_tokens=args.max_new_tokens,
+            temperature=args.temperature,
         )
 
         if is_valid_json(generated):
@@ -108,7 +86,6 @@ def main() -> None:
             if expected is not None and exact_value_match(parsed, expected):
                 exact_count += 1
 
-        # Trivial baseline: always emit "{}" — a real floor, not a strawman.
         if is_valid_json("{}"):
             baseline_valid_count += 1
         if schema_matches(parse_json_or_none("{}"), SCHEMA_KEYS):
@@ -117,7 +94,10 @@ def main() -> None:
         if i < 5:
             logger.info(
                 "Example %d\n  instruction: %s\n  generated:   %s\n  expected:    %s",
-                i, example["instruction"], generated, example["response"],
+                i,
+                example["instruction"],
+                generated,
+                example["response"],
             )
 
     n = len(examples)

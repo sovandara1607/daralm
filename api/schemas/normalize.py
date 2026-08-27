@@ -1,11 +1,4 @@
-"""Request/response schema for POST /v1/normalize.
-
-The first capability from the NLP-platform roadmap (`ROADMAP_NLP_PLATFORM.md`)
-exposed over HTTP — matches `/v1/tokenize`'s pattern (a standalone utility
-endpoint, not tied to generation) since normalization is exactly the kind
-of thing worth checking before spending a `/v1/generate` or `/v1/chat`
-call on text, the same reasoning `/v1/tokenize` was built on.
-"""
+"""Request/response schema for POST /v1/normalize."""
 
 from __future__ import annotations
 

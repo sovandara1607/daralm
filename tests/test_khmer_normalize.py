@@ -1,10 +1,3 @@
-"""Tests for daralm.data.khmer_normalize — the first NLP-platform-roadmap
-capability (Khmer text normalization). Khmer Unicode handling is
-explicitly called out as needing "extensive tests" in the roadmap this
-module implements — every function here is exercised on real script
-ranges, not just ASCII placeholders.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -19,17 +12,12 @@ from daralm.data.khmer_normalize import (
 KHMER_SENTENCE = "កម្ពុជាជាប្រទេសមួយនៅអាស៊ីអាគ្នេយ៍។"
 
 
-# --- khmer_digits_to_arabic -------------------------------------------
-
-
 def test_khmer_digits_to_arabic_converts_all_ten_digits():
     assert khmer_digits_to_arabic("០១២៣៤៥៦៧៨៩") == "0123456789"
 
 
 def test_khmer_digits_to_arabic_in_real_context():
-    # "the year 2024" written with Khmer digits, as it appears in real
-    # corpus text
-    assert khmer_digits_to_arabic("ឆ្នាំ២០២៤") == "ឆ្នាំ2024"
+    assert khmer_digits_to_arabic("ឆ្នាំ២០២៦") == "ឆ្នាំ2026"
 
 
 def test_khmer_digits_to_arabic_leaves_non_digit_khmer_text_untouched():
@@ -37,10 +25,7 @@ def test_khmer_digits_to_arabic_leaves_non_digit_khmer_text_untouched():
 
 
 def test_khmer_digits_to_arabic_leaves_arabic_digits_untouched():
-    assert khmer_digits_to_arabic("already 2024") == "already 2024"
-
-
-# --- arabic_digits_to_khmer (the reverse direction) --------------------
+    assert khmer_digits_to_arabic("already 2026") == "already 2026"
 
 
 def test_arabic_digits_to_khmer_converts_all_ten_digits():
@@ -52,11 +37,7 @@ def test_digit_conversion_round_trips():
     assert arabic_digits_to_khmer(khmer_digits_to_arabic(original)) == original
 
 
-# --- normalize_khmer_punctuation_spacing --------------------------------
-
-
 def test_removes_space_before_khan():
-    # The exact real-corpus pattern found by sampling data/cleaned/train.jsonl
     assert normalize_khmer_punctuation_spacing("ប្រទេសកម្ពុជា ។") == "ប្រទេសកម្ពុជា។"
 
 
@@ -81,9 +62,6 @@ def test_does_not_affect_ordinary_latin_punctuation():
     assert normalize_khmer_punctuation_spacing(text) == text
 
 
-# --- normalize_khmer_text (the composed pipeline) -----------------------
-
-
 def test_normalize_khmer_text_default_keeps_digits_unconverted():
     result = normalize_khmer_text("ឆ្នាំ២០២៤")
     assert "២០២៤" in result
@@ -101,8 +79,6 @@ def test_normalize_khmer_text_khmer_mode_converts_arabic_digits():
 
 
 def test_normalize_khmer_text_composes_with_existing_cleaning():
-    # Reuses daralm.data.cleaner.clean_text — HTML/control-char stripping
-    # should still happen, not just the two new Khmer-specific steps.
     result = normalize_khmer_text("<b>hello</b>\x00 world ។")
     assert "<b>" not in result
     assert "\x00" not in result

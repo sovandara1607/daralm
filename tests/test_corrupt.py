@@ -1,7 +1,3 @@
-"""Tests for daralm.data.corrupt — the synthetic typo generator behind
-grammar/spelling correction's training data (Stage 2 of ROADMAP_NLP_PLATFORM.md).
-"""
-
 from __future__ import annotations
 
 import random
@@ -32,8 +28,6 @@ def test_corrupt_word_is_deterministic_given_same_rng_state():
 
 
 def test_corrupt_word_produces_variety_across_many_calls():
-    # Not every call should produce the identical corruption — otherwise
-    # the "random operation" logic isn't actually varying.
     rng = random.Random(7)
     results = {corrupt_word("keyboard", rng) for _ in range(30)}
     assert len(results) > 1
@@ -84,6 +78,4 @@ def test_corrupt_text_preserves_word_count():
 def test_corrupt_text_handles_khmer_script():
     text = "សួស្តី​ពិភពលោក នេះជាការសាកល្បង"
     result = corrupt_text(text, corruption_rate=0.8, seed=9)
-    # Just needs to run without crashing and preserve word count — no
-    # claim about typo *realism* for Khmer (see module docstring).
     assert len(result.split()) == len(text.split())

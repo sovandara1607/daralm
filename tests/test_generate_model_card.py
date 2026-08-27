@@ -1,7 +1,3 @@
-"""Tests for scripts/generate_model_card.py's render() — a pure function,
-so testable without touching real project artifacts on disk.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -106,10 +102,6 @@ def test_render_includes_evaluation_data_when_present():
 
 
 def test_render_reports_real_corpus_token_count_when_available():
-    # Regression test for a real bug: the "Training Tokens" and "Known
-    # Limitations" sections used to hard-code "~8.25M tokens" / "~3,000
-    # Wikipedia documents" — numbers that went silently stale the moment
-    # the corpus was expanded (see count_corpus_tokens's docstring).
     module = _load_module()
     corpus_stats = {
         "documents": 15939,

@@ -1,16 +1,5 @@
 #!/usr/bin/env python
-"""Generate MODEL_CARD.md from real project artifacts — spec section 23.
-
-Every field is derived from a file already on disk (config YAML, corpus
-stats, tokenizer evaluation, the Phase 8 evaluation report) rather than
-hand-typed, so the card can't silently drift from what was actually run.
-Spec section 23's own rule drives the tone throughout: "Do not claim
-capabilities that have not been evaluated" — known limitations are listed
-as prominently as the numbers.
-
-Usage:
-    python scripts/generate_model_card.py --model daralm-50m
-"""
+"""Generate MODEL_CARD.md from real project artifacts."""
 
 from __future__ import annotations
 
@@ -33,7 +22,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default="daralm-50m", help="Model name, matching a config file")
     parser.add_argument("--configs-dir", type=Path, default=Path("configs"))
     parser.add_argument("--checkpoints-dir", type=Path, default=Path("checkpoints"))
-    parser.add_argument("--data-dir", type=Path, default=Path("data"))
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        help="Exact data snapshot used by this checkpoint. Omit rather than using newer data.",
+    )
     parser.add_argument(
         "--evaluation-report", type=Path, default=Path("experiments/evaluation_report.json")
     )
@@ -49,15 +42,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def count_corpus_tokens(data_dir: Path, tokenizer_path: Path) -> int | None:
-    """Real total token count across the cleaned train/val/test splits.
-
-    This replaced a hard-coded "~8.25M tokens" string that silently went
-    stale the moment the corpus was expanded (Phase 1 -> the 150M scale-up
-    fetched 8,000 docs/language instead of 1,500) — every model card
-    generated in between kept claiming the old, wrong corpus size. Actually
-    tokenizing the corpus is a few seconds of real work; there's no reason
-    to guess when the real number is this cheap to compute.
-    """
+    """Real total token count across the cleaned train/val/test splits."""
     if not tokenizer_path.exists():
         return None
     tokenizer = DaraLMTokenizer.from_pretrained(tokenizer_path)
@@ -185,8 +170,10 @@ def render(
     lines.append("")
 
     tokens_trained = (
-        train.batch_size * train.gradient_accumulation_steps
-        * arch.max_position_embeddings * train.max_steps
+        train.batch_size
+        * train.gradient_accumulation_steps
+        * arch.max_position_embeddings
+        * train.max_steps
     )
     effective_batch = train.batch_size * train.gradient_accumulation_steps
     lines.append("## Training Tokens")
@@ -277,8 +264,7 @@ def render(
         "not follow instructions or answer questions reliably."
     )
     lines.append(
-        "- **No safety tuning.** No RLHF, no content filtering, no red-teaming has been "
-        "performed."
+        "- **No safety tuning.** No RLHF, no content filtering, no red-teaming has been performed."
     )
     lines.append("")
 
@@ -321,12 +307,21 @@ def main() -> None:
             args.evaluation_report,
         )
 
-    corpus_stats = load_json(args.data_dir / "cleaned" / "stats.json")
-    manifest = load_json(args.data_dir / "raw" / "MANIFEST.json")
+    corpus_stats = None
+    manifest = None
+    corpus_tokens = None
+    if args.data_dir is not None:
+        corpus_stats = load_json(args.data_dir / "cleaned" / "stats.json")
+        manifest = load_json(args.data_dir / "raw" / "MANIFEST.json")
+        corpus_tokens = count_corpus_tokens(args.data_dir, args.tokenizer)
+        if corpus_tokens is None:
+            logger.warning("Tokenizer not found at %s — corpus token count omitted", args.tokenizer)
+    else:
+        logger.warning(
+            "No --data-dir supplied; omitting corpus claims to avoid attributing newer data "
+            "to an older checkpoint"
+        )
     tokenizer_eval = load_json(args.checkpoints_dir / "tokenizer" / "evaluation_report.json")
-    corpus_tokens = count_corpus_tokens(args.data_dir, args.tokenizer)
-    if corpus_tokens is None:
-        logger.warning("Tokenizer not found at %s — corpus token count omitted", args.tokenizer)
 
     card = render(config, model_eval, corpus_stats, manifest, tokenizer_eval, corpus_tokens)
     args.output.write_text(card, encoding="utf-8")

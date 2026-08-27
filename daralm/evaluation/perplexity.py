@@ -1,14 +1,3 @@
-"""Perplexity: the standard way to turn a loss number into something interpretable.
-
-Cross-entropy loss is measured in nats (natural-log units) and doesn't have
-an intuitive scale on its own — "loss 4.2" means little by itself.
-Perplexity = exp(loss) rescales it into "the model was, on average, as
-uncertain as if it were choosing uniformly among this many tokens" — a
-perplexity of 80 means the model's average confusion at each position was
-comparable to guessing uniformly among 80 options. Lower is better; a
-perfect model scores 1.0 (completely certain, always right).
-"""
-
 from __future__ import annotations
 
 import math
@@ -23,12 +12,7 @@ from daralm.model.transformer import DaraLMTransformer
 def compute_perplexity(
     model: DaraLMTransformer, dataloader: DataLoader, device: torch.device
 ) -> tuple[float, float]:
-    """Average loss and perplexity over every batch in `dataloader`.
-
-    Returns (avg_loss, perplexity). Puts the model in eval mode for the
-    duration (disables dropout) and restores its prior mode afterward,
-    rather than assuming the caller already did so.
-    """
+    """Average loss and perplexity over every batch in `dataloader`."""
     was_training = model.training
     model.eval()
 

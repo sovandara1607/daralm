@@ -1,10 +1,4 @@
-"""Tests for daralm.tokenizer — training, wrapper, and evaluation.
-
-Trains tiny real SentencePiece models on a small in-memory corpus (both
-BPE and Unigram) so these are genuine integration tests of the trainer +
-wrapper, not mocks — SentencePiece training is fast enough at this scale
-to run in a normal test suite.
-"""
+"""Tests for daralm.tokenizer — training, wrapper, and evaluation."""
 
 from __future__ import annotations
 
@@ -14,7 +8,6 @@ from daralm.tokenizer.evaluation import compute_metrics, load_domain_examples
 from daralm.tokenizer.tokenizer import DaraLMTokenizer
 from daralm.tokenizer.train import BOS_ID, EOS_ID, PAD_ID, UNK_ID, train_sentencepiece
 
-# A small but repetitive corpus so a tiny vocab_size is actually trainable.
 _KHMER_LINES = [
     "កម្ពុជាជាប្រទេសមួយនៅអាស៊ីអាគ្នេយ៍។",
     "ភ្នំពេញជារាជធានីនៃប្រទេសកម្ពុជា។",
@@ -36,9 +29,6 @@ def tiny_corpus_path(tmp_path_factory):
     return path
 
 
-# SentencePiece caps vocab_size at the number of unique pieces the corpus
-# can actually produce; our tiny repeated-line fixture corpus only supports
-# a small vocab, well below the project's real 16k-32k target.
 _TINY_VOCAB_SIZE = 80
 
 
@@ -60,9 +50,6 @@ def unigram_tokenizer(tiny_corpus_path, tmp_path_factory):
     return DaraLMTokenizer.from_pretrained(model_path)
 
 
-# --- training / special tokens -------------------------------------------
-
-
 def test_train_sentencepiece_produces_model_file(bpe_tokenizer):
     assert bpe_tokenizer.vocab_size == _TINY_VOCAB_SIZE
 
@@ -80,9 +67,6 @@ def test_from_pretrained_missing_file_raises(tmp_path):
         DaraLMTokenizer.from_pretrained(tmp_path / "does_not_exist.model")
 
 
-# --- encode / decode -------------------------------------------------------
-
-
 def test_encode_returns_nonempty_ids_for_khmer(bpe_tokenizer):
     ids = bpe_tokenizer.encode(_KHMER_LINES[0])
     assert len(ids) > 0
@@ -95,7 +79,6 @@ def test_encode_returns_nonempty_ids_for_english(bpe_tokenizer):
 
 
 def test_encode_decode_roundtrip_on_in_vocabulary_text(unigram_tokenizer):
-    # Text drawn from the training corpus should round-trip losslessly.
     text = _KHMER_LINES[0]
     decoded = unigram_tokenizer.decode(unigram_tokenizer.encode(text))
     assert decoded == text
@@ -129,16 +112,9 @@ def test_tokenize_returns_piece_strings(bpe_tokenizer):
     assert len(pieces) > 0
 
 
-# --- mixed / unseen script text -------------------------------------------
-
-
 def test_unseen_script_produces_unk_or_fallback_pieces(bpe_tokenizer):
-    # Japanese text was never in the training corpus (only Khmer + English).
     ids = bpe_tokenizer.encode("これは日本語です")
     assert len(ids) > 0  # SentencePiece always produces *something*, even if it's all <unk>
-
-
-# --- evaluation -------------------------------------------------------------
 
 
 def test_compute_metrics_basic(bpe_tokenizer):

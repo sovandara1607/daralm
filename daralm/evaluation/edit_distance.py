@@ -1,14 +1,3 @@
-"""Character/word error rate — the standard metrics for grammar/spelling
-correction (`ROADMAP_NLP_PLATFORM.md`'s recommended eval for this
-capability), since ground truth is directly known (the un-corrupted source
-sentence), unlike open-ended generation tasks that need a judge or a
-proxy metric like perplexity.
-
-Both are Levenshtein edit distance (insertions + deletions + substitutions)
-between a hypothesis and a reference, normalized by the reference's length
-— CER at the character level, WER at the whitespace-tokenized word level.
-"""
-
 from __future__ import annotations
 
 
@@ -36,13 +25,7 @@ def _levenshtein(a: list[str], b: list[str]) -> int:
 
 
 def character_error_rate(hypothesis: str, reference: str) -> float:
-    """Levenshtein distance over characters, normalized by len(reference).
-
-    Returns 0.0 for an empty reference and an empty hypothesis (a perfect,
-    trivial match) — and 1.0 (not a division error) for an empty reference
-    against a non-empty hypothesis, since every character in `hypothesis`
-    would need to be deleted.
-    """
+    """Levenshtein distance over characters, normalized by len(reference)."""
     if not reference:
         return 0.0 if not hypothesis else 1.0
     distance = _levenshtein(list(hypothesis), list(reference))
@@ -50,9 +33,6 @@ def character_error_rate(hypothesis: str, reference: str) -> float:
 
 
 def word_error_rate(hypothesis: str, reference: str) -> float:
-    """Levenshtein distance over whitespace-split words, normalized by
-    the reference's word count. Same empty-reference convention as
-    `character_error_rate`."""
     reference_words = reference.split()
     hypothesis_words = hypothesis.split()
     if not reference_words:

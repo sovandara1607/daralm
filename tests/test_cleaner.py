@@ -29,8 +29,6 @@ def test_normalize_unicode_strips_control_chars_but_keeps_newline_and_tab():
 
 
 def test_normalize_unicode_is_nfc():
-    # "é" as e + combining acute accent (NFD) should normalize to the
-    # precomposed single-codepoint form (NFC).
     decomposed = "é"
     result = normalize_unicode(decomposed)
     assert result == "é"
@@ -105,7 +103,6 @@ def test_clean_text_pipeline_end_to_end():
     assert "&amp;" not in result
     assert "   " not in result
     assert "!!!!!!!!!!!" not in result
-    # URLs are kept by default (strip_urls is opt-in, not part of clean_text)
     assert "https://example.com" in result
 
 

@@ -1,29 +1,4 @@
 #!/usr/bin/env python
-"""Evaluate a grammar/spelling-correction fine-tune with real generation +
-CER/WER — the metrics `ROADMAP_NLP_PLATFORM.md` recommends for this
-capability, since ground truth (the un-corrupted sentence) is directly
-known, unlike open-ended generation.
-
-Runs real inference (`daralm.inference.generator.generate_chat`) on a held-
-out split, not a loss/perplexity proxy — perplexity says how surprised the
-model was by the *correct* continuation; CER/WER says whether what it
-actually *generated* matches the correct text, which is the real question
-for a correction task.
-
-A no-op baseline (CER/WER of the corrupted input against the reference,
-with zero model involvement) is reported alongside the model's score —
-without it, a low CER could just mean "the corruption was mild," not "the
-model fixed anything." That baseline is now the explicit pass/fail gate,
-not just context: a grammar-correction model that can't beat "do nothing"
-hasn't demonstrated the capability at all, whatever its own raw CER looks
-like in isolation.
-
-Usage:
-    python scripts/evaluate_grammar.py \\
-        --config configs/50m-grammar.yaml \\
-        --checkpoint checkpoints/daralm-50m-grammar/best \\
-        --data data/grammar/instructions_test.jsonl
-"""
 
 from __future__ import annotations
 
@@ -47,9 +22,6 @@ logger = get_logger(__name__)
 
 
 def _extract_corrupted_text(instruction: str) -> str:
-    """Pull the corrupted sentence back out of the training instruction
-    template ("Fix any spelling and grammar errors in this text: {x}") so
-    the no-op baseline can be scored against it directly."""
     prefix = "Fix any spelling and grammar errors in this text: "
     if not instruction.startswith(prefix):
         raise ValueError(
@@ -120,7 +92,10 @@ def main() -> None:
         if i < 5:
             logger.info(
                 "Example %d\n  corrupted: %s\n  generated: %s\n  reference: %s",
-                i, corrupted, generated, reference,
+                i,
+                corrupted,
+                generated,
+                reference,
             )
 
     n = len(examples)
@@ -129,10 +104,6 @@ def main() -> None:
     avg_baseline_cer = sum(baseline_cer) / n
     avg_baseline_wer = sum(baseline_wer) / n
 
-    # The no-op baseline as an explicit gate, not just reported context —
-    # matches overfit_test.py's/overfit_test_grammar.py's pattern of a
-    # real pass/fail verdict with an exit code, rather than a printout
-    # the reader has to interpret themselves.
     passed = avg_model_cer < avg_baseline_cer
 
     print()

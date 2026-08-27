@@ -1,23 +1,4 @@
-"""Memorization checking: does the model reproduce documents it trained on?
-
-Spec section 15 explicitly lists this as its own evaluation concern,
-distinct from perplexity: a model can have low loss on training data either
-because it learned generalizable patterns, or because it simply memorized
-the specific sequences. The two are indistinguishable from loss alone — you
-have to actually check whether the model's own greedy continuation of a
-training-document prefix matches that document's real continuation.
-
-This module works at the token-ID level, not decoded text — comparing
-decoded strings would blur token-boundary differences that are irrelevant
-to whether the model reproduced the same underlying token sequence.
-
-For Phase 5 (the overfitting sanity test), a *high* match rate on the tiny
-overfit set is the desired outcome — proof the model can memorize at all.
-Later, on the full training set, a suspiciously high match rate would be a
-red flag for problematic memorization instead (spec section 15's actual
-concern) — same measurement, opposite interpretation, depending on which
-set you point it at.
-"""
+"""Memorization checking: does the model reproduce documents it trained on?."""
 
 from __future__ import annotations
 
@@ -31,13 +12,7 @@ from daralm.tokenizer.tokenizer import DaraLMTokenizer
 def _greedy_continue(
     model: DaraLMTransformer, prompt_ids: list[int], num_tokens: int, device: torch.device
 ) -> list[int]:
-    """Greedily generate `num_tokens` continuation IDs from `prompt_ids`.
-
-    Greedy (not sampled) is deliberate here: memorization checking asks
-    "what is the model *most confident* comes next", which is exactly what
-    argmax decoding answers — sampling would inject randomness into a
-    measurement that's supposed to be deterministic.
-    """
+    """Greedily generate `num_tokens` continuation IDs from `prompt_ids`."""
     generated = list(prompt_ids)
     for _ in range(num_tokens):
         context = generated[-model.config.max_position_embeddings :]
@@ -48,12 +23,6 @@ def _greedy_continue(
 
 
 def token_match_rate(generated_ids: list[int], reference_ids: list[int]) -> float:
-    """Fraction of `reference_ids` positions exactly reproduced by `generated_ids`.
-
-    Normalized by `len(reference_ids)` (not the shorter of the two), so a
-    `generated_ids` that's shorter than the reference is penalized for the
-    positions it never even reached, rather than let off the hook.
-    """
     if not reference_ids:
         return 0.0
     compare_len = min(len(generated_ids), len(reference_ids))
@@ -70,27 +39,6 @@ def check_memorization(
     min_tokens: int = 20,
     max_reference_tokens: int = 50,
 ) -> list[dict]:
-    """For each document, prompt with its first `prompt_fraction` of tokens
-    and check how much of the *real* remainder the model's greedy
-    continuation reproduces.
-
-    Documents shorter than `min_tokens` (after tokenizing) are skipped —
-    too little signal either way from a handful of tokens.
-
-    `max_reference_tokens` caps how much of the continuation is actually
-    checked (default 50). This isn't just a speed concession — generation
-    here has no KV cache (Phase 4's deliberate simplicity trade-off), so
-    checking a full multi-thousand-token article would mean thousands of
-    uncached forward passes per document. It's also the methodologically
-    right call independent of speed: real memorization audits (e.g. Carlini
-    et al.'s "extractable memorization") test a fixed-length continuation
-    window, not exact reproduction of an entire document — a bounded window
-    is the standard, not a shortcut.
-
-    Returns one result dict per evaluated document: decoded previews of the
-    prompt/reference/generated continuation (for manual inspection) plus
-    `token_match_rate`.
-    """
     device = next(model.parameters()).device
     was_training = model.training
     model.eval()
@@ -123,7 +71,6 @@ def check_memorization(
 
 
 def average_match_rate(results: list[dict]) -> float:
-    """Mean `token_match_rate` across `check_memorization`'s results, or 0.0 if empty."""
     if not results:
         return 0.0
     return sum(r["token_match_rate"] for r in results) / len(results)

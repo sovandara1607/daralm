@@ -1,18 +1,4 @@
-"""Loading raw documents into DaraLM's common record schema.
-
-Every record — regardless of where it came from — is normalized to:
-
-    {"text": "...", "language": "km" | "en" | ..., "source": "source_name"}
-
-stored one JSON object per line (JSONL). This module has two jobs: reading
-and writing that JSONL format, and pulling small public samples of raw text
-from Hugging Face to seed `data/raw/` (see `fetch_wikipedia_sample`).
-
-Malformed individual JSONL lines are skipped with a logged warning rather
-than aborting the whole load — one bad line in a 10,000-line file shouldn't
-discard the other 9,999 — but the skip is never silent (see spec section 29,
-"fail loudly": the caller can see exactly how many records were dropped).
-"""
+"""Loading raw documents into DaraLM's common record schema."""
 
 from __future__ import annotations
 
@@ -28,15 +14,7 @@ REQUIRED_FIELDS = ("text", "language", "source")
 
 
 def load_jsonl(path: str | Path, required_field: str = "text") -> list[dict[str, Any]]:
-    """Read a JSONL file into a list of record dicts.
-
-    Raises `FileNotFoundError` if `path` doesn't exist. Individual lines that
-    are malformed JSON, or valid JSON missing `required_field`, are skipped
-    with a warning rather than aborting the whole load. `required_field`
-    defaults to `"text"` (Phase 1 base-pretraining record schema); Phase 9's
-    instruction records use `"instruction"` instead — pass it explicitly
-    rather than adding a second loader function for the same file format.
-    """
+    """Read a JSONL file into a list of record dicts."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"JSONL file not found: {path}")
@@ -68,12 +46,7 @@ def load_jsonl(path: str | Path, required_field: str = "text") -> list[dict[str,
 
 
 def save_jsonl(records: list[dict[str, Any]], path: str | Path) -> None:
-    """Write records to `path` as JSONL, one JSON object per line.
-
-    Creates parent directories if needed. `ensure_ascii=False` so Khmer text
-    is written as literal UTF-8 characters, not `\\uXXXX` escapes — keeps the
-    files human-readable for spot-checking.
-    """
+    """Write records to `path` as JSONL, one JSON object per line."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -86,26 +59,7 @@ def fetch_wikipedia_sample(
     n_docs: int,
     min_chars: int = 200,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Stream a small sample of a Wikipedia language edition from Hugging Face.
-
-    Uses `datasets` in streaming mode so we never download a full Wikipedia
-    dump — only the first `n_docs` articles (after a minimum-length filter to
-    skip near-empty stub pages) are pulled over the network.
-
-    Args:
-        language: Wikipedia language code, e.g. "km" or "en".
-        n_docs: Number of documents to collect.
-        min_chars: Skip articles shorter than this (raw, pre-cleaning) —
-            filters out near-empty Wikipedia stub pages before we even
-            bother running them through the cleaning pipeline.
-
-    Returns:
-        A tuple of (records, manifest_entry). `records` are in DaraLM's
-        common schema. `manifest_entry` documents exactly what was fetched
-        — dataset id, config, license, and count — so the source is always
-        traceable (spec section 30: never download data without recording
-        its source/license).
-    """
+    """Stream a small sample of a Wikipedia language edition from Hugging Face."""
     from datasets import load_dataset  # local import: heavy, only needed here
 
     config = f"20231101.{language}"
@@ -136,19 +90,7 @@ def fetch_wikipedia_sample(
 
 
 def fetch_alpaca_sample(n_examples: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Stream a small sample of the Alpaca instruction-tuning dataset (Phase 9).
-
-    A different record schema from `fetch_wikipedia_sample`'s — instruction
-    data is `{"instruction", "response", "language", "source"}`, not
-    `{"text", "language", "source"}` — since instruction-tuning needs the
-    prompt/response boundary preserved, not a single blob of text.
-
-    Only examples with an empty `input` field are kept: Alpaca's `input` is
-    optional extra context appended to some instructions (e.g. a passage to
-    summarize); folding it in would need its own place in the chat template,
-    which adds a real design question (spec section 25's template has no
-    slot for it) — dropping those examples is a scope cut, not a bug.
-    """
+    """Stream a small sample of the Alpaca instruction-tuning dataset (Phase 9)."""
     from datasets import load_dataset  # local import: heavy, only needed here
 
     logger.info("Streaming tatsu-lab/alpaca (target %d examples)", n_examples)
@@ -187,29 +129,6 @@ def fetch_alpaca_sample(n_examples: int) -> tuple[list[dict[str, Any]], dict[str
 
 
 def fetch_alpaca_khmer_sample(n_examples: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Stream a sample of `saillab/alpaca_khmer_taco` — a real Khmer instruction
-    dataset (found while improving Phase 9's SFT data), instead of relying
-    solely on 25 hand-authored examples.
-
-    Two format quirks this dataset has that `fetch_alpaca_sample` doesn't
-    need to handle:
-
-    1. `output` is a compound string in the TaCo-paper style —
-       "Instruction in English: ... Response in English: ... Response in
-       Khmer: ...", not a plain response. Only the text after
-       "Response in Khmer:" is kept; rows without that marker are
-       incompletely-translated leftovers from the source pipeline and are
-       skipped (measured: ~17% of rows, not a rare edge case).
-    2. `input` (Alpaca's optional extra context) is empty rows encoded as
-       the *string* `"nan"`, not `None`/`""` — a `pandas`-via-`parquet`
-       artifact. Checking truthiness alone (`fetch_alpaca_sample`'s
-       approach) would incorrectly treat every empty row as "has input".
-       Unlike the English Alpaca sample, most rows here DO have a real,
-       non-empty `input` (measured: ~91%) — dropping them the way
-       `fetch_alpaca_sample` does would throw away the majority of this
-       already-scarce-language dataset, so `input` is concatenated onto
-       `instruction` instead when present.
-    """
     from datasets import load_dataset  # local import: heavy, only needed here
 
     logger.info("Streaming saillab/alpaca_khmer_taco (target %d examples)", n_examples)
