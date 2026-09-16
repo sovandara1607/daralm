@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
+import torch.utils.checkpoint
 from torch import nn
 
 from daralm.model.config import ArchitectureConfig
@@ -50,6 +51,11 @@ class DaraLMTransformer(nn.Module):
         )
         self.final_norm = RMSNorm(config.hidden_size)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        # Off by default; Trainer flips this on when TrainingConfig.gradient_checkpointing
+        # is set (see gradient_checkpointing_enable/disable below and Model Optimization
+        # Stage 3). Never combined with use_cache — training never passes use_cache=True.
+        self.gradient_checkpointing = False
 
         self._init_weights()
 
@@ -95,7 +101,16 @@ class DaraLMTransformer(nn.Module):
         present_key_values: list[tuple[torch.Tensor, torch.Tensor]] = []
         for i, block in enumerate(self.blocks):
             layer_past = past_key_values[i] if past_key_values is not None else None
-            x, present = block(x, cos, sin, layer_past, use_cache)
+            if self.gradient_checkpointing and self.training:
+                # use_cache is always False here (checkpointing only applies during
+                # training, and Trainer never requests a KV cache) — recomputing
+                # this block's forward pass on the backward pass is what buys back
+                # the activation memory it isn't storing.
+                x, present = torch.utils.checkpoint.checkpoint(
+                    block, x, cos, sin, layer_past, use_cache, use_reentrant=False
+                )
+            else:
+                x, present = block(x, cos, sin, layer_past, use_cache)
             if use_cache:
                 present_key_values.append(present)
 
@@ -119,6 +134,14 @@ class DaraLMTransformer(nn.Module):
             hidden_states=x if return_hidden_states else None,
             past_key_values=present_key_values if use_cache else None,
         )
+
+    def gradient_checkpointing_enable(self) -> None:
+        """Recompute each TransformerBlock's forward pass during backward instead of
+        storing its activations — lower peak memory, slower per-step (Stage 3)."""
+        self.gradient_checkpointing = True
+
+    def gradient_checkpointing_disable(self) -> None:
+        self.gradient_checkpointing = False
 
     def num_parameters(self, exclude_tied: bool = True) -> int:
         """Count trainable parameters."""

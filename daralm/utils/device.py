@@ -28,3 +28,13 @@ def get_device_name(device: torch.device) -> str:
     if device.type == "mps":
         return "Apple Silicon (MPS)"
     return "CPU"
+
+
+def peak_memory_gb(device: torch.device) -> float | None:
+    """Peak allocated device memory in GB, or None if not measurable (e.g. plain CPU)."""
+    if device.type == "cuda":
+        return torch.cuda.max_memory_allocated(device) / 1024**3
+    if device.type == "mps":
+        # MPS reports current allocation; CUDA also reports peak allocation.
+        return torch.mps.current_allocated_memory() / 1024**3
+    return None

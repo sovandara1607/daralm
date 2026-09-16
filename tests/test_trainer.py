@@ -157,6 +157,103 @@ def test_trainer_runs_and_decreases_loss(tmp_path_factory, tmp_path):
     assert last_loss < first_loss
 
 
+def test_trainer_enables_gradient_checkpointing_when_configured(tmp_path_factory, tmp_path):
+    tokenizer = _make_tiny_tokenizer(tmp_path_factory)
+    records = [
+        {"text": "the quick brown fox jumps over the lazy dog", "language": "en", "source": "s"}
+        for _ in range(80)
+    ]
+    train_records, val_records = records[:60], records[60:]
+
+    config = _tiny_config(
+        max_steps=15,
+        warmup_steps=2,
+        eval_interval=5,
+        save_interval=15,
+        log_interval=5,
+        gradient_checkpointing=True,
+    )
+    config.architecture = config.architecture.model_copy(
+        update={"vocab_size": tokenizer.vocab_size}
+    )
+
+    block_size = 8
+    train_dataset = PackedTokenDataset(train_records, tokenizer, block_size=block_size)
+    val_dataset = PackedTokenDataset(val_records, tokenizer, block_size=block_size)
+
+    tokenizer_file = tmp_path_factory.mktemp("tokfile-gc") / "tok.model"
+    tokenizer_file.write_bytes(b"dummy-bytes-for-fingerprint")
+
+    model = DaraLMTransformer(config.architecture, pad_token_id=tokenizer.pad_id)
+    assert model.gradient_checkpointing is False  # off until the Trainer turns it on
+
+    trainer = Trainer(
+        config=config,
+        model=model,
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        device=torch.device("cpu"),
+        checkpoint_dir=tmp_path / "checkpoints",
+        tokenizer_path=tokenizer_file,
+    )
+
+    assert trainer.model.gradient_checkpointing is True
+
+    first_loss, _ = trainer._train_step(iter(trainer.train_loader))  # noqa: SLF001
+    for _ in range(10):
+        loss, _ = trainer._train_step(iter(trainer.train_loader))  # noqa: SLF001
+    assert loss < first_loss  # still trains normally end-to-end, just recomputing on backward
+
+
+def test_trainer_compile_preserves_checkpoint_compatibility(tmp_path_factory, tmp_path):
+    """torch.compile(model) (not used here) prefixes state_dict keys with
+    '_orig_mod.' and changes the model's wrapper type — either would silently
+    break save_checkpoint/load_checkpoint. Trainer must use in-place
+    model.compile() instead, which changes neither."""
+    tokenizer = _make_tiny_tokenizer(tmp_path_factory)
+    records = [
+        {"text": "the quick brown fox jumps over the lazy dog", "language": "en", "source": "s"}
+        for _ in range(80)
+    ]
+    train_records, val_records = records[:60], records[60:]
+
+    config = _tiny_config(
+        max_steps=15, warmup_steps=2, eval_interval=5, save_interval=15, log_interval=5,
+        compile=True,
+    )
+    config.architecture = config.architecture.model_copy(
+        update={"vocab_size": tokenizer.vocab_size}
+    )
+
+    block_size = 8
+    train_dataset = PackedTokenDataset(train_records, tokenizer, block_size=block_size)
+    val_dataset = PackedTokenDataset(val_records, tokenizer, block_size=block_size)
+
+    tokenizer_file = tmp_path_factory.mktemp("tokfile-compile") / "tok.model"
+    tokenizer_file.write_bytes(b"dummy-bytes-for-fingerprint")
+
+    model = DaraLMTransformer(config.architecture, pad_token_id=tokenizer.pad_id)
+    trainer = Trainer(
+        config=config,
+        model=model,
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        device=torch.device("cpu"),
+        checkpoint_dir=tmp_path / "checkpoints",
+        tokenizer_path=tokenizer_file,
+    )
+
+    assert type(trainer.model) is DaraLMTransformer
+    assert not any(k.startswith("_orig_mod.") for k in trainer.model.state_dict())
+
+    first_loss, _ = trainer._train_step(iter(trainer.train_loader))  # noqa: SLF001
+    for _ in range(5):
+        loss, _ = trainer._train_step(iter(trainer.train_loader))  # noqa: SLF001
+    assert loss < first_loss
+
+    trainer._save("best", val_loss=1.0, perplexity=2.7)  # noqa: SLF001 — must not raise
+
+
 def test_trainer_full_run_writes_checkpoints(tmp_path_factory, tmp_path):
     tokenizer = _make_tiny_tokenizer(tmp_path_factory)
     records = [

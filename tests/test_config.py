@@ -120,3 +120,27 @@ def test_50m_config_loads():
     assert config.model_name == "daralm-50m"
     assert 16_000 <= config.architecture.vocab_size <= 32_000
     assert config.training.precision == "bf16"
+
+
+def test_gradient_checkpointing_defaults_to_false():
+    config = ModelConfig(**valid_model_dict())
+    assert config.training.gradient_checkpointing is False
+
+
+def test_gradient_checkpointing_can_be_enabled():
+    raw = valid_model_dict()
+    raw["training"]["gradient_checkpointing"] = True
+    config = ModelConfig(**raw)
+    assert config.training.gradient_checkpointing is True
+
+
+def test_compile_defaults_to_false():
+    config = ModelConfig(**valid_model_dict())
+    assert config.training.compile is False
+
+
+def test_compile_can_be_enabled():
+    raw = valid_model_dict()
+    raw["training"]["compile"] = True
+    config = ModelConfig(**raw)
+    assert config.training.compile is True

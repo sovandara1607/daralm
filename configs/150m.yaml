@@ -26,3 +26,8 @@ training:
   save_interval: 500
   log_interval: 25
   seed: 42
+  # Measured 1.04x on MPS at this model's own batch_size=2/seq_len=1024 (i.e. within
+  # noise, not the 1.43x seen at 50m scale — don't assume the 50m result transfers).
+  # Left on: no measured regression either, and it may help more at a larger batch
+  # size or on the CPU/fbgemm deployment target, neither checked here.
+  compile: true

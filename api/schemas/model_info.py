@@ -21,3 +21,4 @@ class ModelInfoResponse(BaseModel):
     parameters: int
     checkpoint_step: int | None
     device: str
+    quantized: bool

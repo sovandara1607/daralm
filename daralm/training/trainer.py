@@ -17,21 +17,12 @@ from daralm.model.transformer import DaraLMTransformer
 from daralm.training.checkpoint import save_checkpoint, write_meta_json
 from daralm.training.optimizer import build_optimizer
 from daralm.training.scheduler import build_scheduler
+from daralm.utils.device import peak_memory_gb
 from daralm.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 _AUTOCAST_DTYPE = {"fp16": torch.float16, "bf16": torch.bfloat16}
-
-
-def _gpu_memory_gb(device: torch.device) -> float | None:
-    """Current allocated device memory in GB, or None if not measurable."""
-    if device.type == "cuda":
-        return torch.cuda.max_memory_allocated(device) / 1024**3
-    if device.type == "mps":
-        # MPS reports current allocation; CUDA also reports peak allocation.
-        return torch.mps.current_allocated_memory() / 1024**3
-    return None
 
 
 def _unpack_batch(batch) -> tuple[torch.Tensor, torch.Tensor]:
@@ -63,6 +54,14 @@ class Trainer:
         self.config = config
         self.training_config = config.training
         self.model = model.to(device)
+        if self.training_config.gradient_checkpointing:
+            self.model.gradient_checkpointing_enable()
+        if self.training_config.compile:
+            # In-place (nn.Module.compile), not self.model = torch.compile(self.model) —
+            # the latter wraps the model and prefixes state_dict keys with "_orig_mod.",
+            # breaking save_checkpoint/load_checkpoint compatibility. In-place compiling
+            # keeps the model's class and state_dict keys unchanged.
+            self.model.compile()
         self.device = device
         self.checkpoint_dir = Path(checkpoint_dir)
         self.tokenizer_path = tokenizer_path
@@ -169,7 +168,7 @@ class Trainer:
                 tokens_per_sec = (
                     tokens_this_step * self.training_config.log_interval / max(elapsed, 1e-9)
                 )
-                gpu_memory_gb = _gpu_memory_gb(self.device)
+                gpu_memory_gb = peak_memory_gb(self.device)
                 gpu_memory_str = f"{gpu_memory_gb:.2f}GB" if gpu_memory_gb is not None else "n/a"
                 lr = self.scheduler.get_last_lr()[0]
                 logger.info(

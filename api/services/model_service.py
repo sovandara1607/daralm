@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import torch
 from starlette.concurrency import run_in_threadpool
 
 from daralm.inference.generator import generate, generate_chat
+from daralm.inference.quantization import quantize_dynamic_int8
 from daralm.model.config import ModelConfig
 from daralm.model.transformer import DaraLMTransformer
 from daralm.tokenizer.tokenizer import DaraLMTokenizer
@@ -26,6 +28,8 @@ class ModelService:
         config: ModelConfig,
         device: torch.device,
         checkpoint_step: int | None = None,
+        quantized: bool = False,
+        num_parameters: int | None = None,
     ) -> None:
         self.model = model.to(device)
         self.model.eval()  # generation must never see training-mode dropout
@@ -33,6 +37,11 @@ class ModelService:
         self.config = config
         self.device = device
         self.checkpoint_step = checkpoint_step
+        self.quantized = quantized
+        # Dynamic quantization replaces nn.Linear with a packed-weight module whose
+        # .parameters() no longer reflects the true weight count, so callers that
+        # quantize must pass the pre-quantization count explicitly.
+        self._num_parameters = num_parameters
 
     @classmethod
     def from_checkpoint(
@@ -84,12 +93,31 @@ class ModelService:
             checkpoint_info["step"],
             get_device_name(device),
         )
+
+        num_parameters = model.num_parameters()
+
+        # Opt-in dynamic int8 quantization (serving-time decision, not part of
+        # ModelConfig — see daralm/inference/quantization.py). CPU-only.
+        quantized = False
+        if os.environ.get("DARALM_QUANTIZE", "").lower() in {"1", "true", "yes"}:
+            if device.type == "cpu":
+                model = quantize_dynamic_int8(model.to(device))
+                quantized = True
+            else:
+                logger.warning(
+                    "DARALM_QUANTIZE is set but device=%s has no dynamic-quantization "
+                    "backend (CPU only) — serving unquantized.",
+                    device.type,
+                )
+
         return cls(
             model=model,
             tokenizer=tokenizer,
             config=config,
             device=device,
             checkpoint_step=checkpoint_info["step"],
+            quantized=quantized,
+            num_parameters=num_parameters,
         )
 
     def model_info(self) -> dict:
@@ -102,9 +130,14 @@ class ModelService:
             "num_layers": arch.num_layers,
             "num_attention_heads": arch.num_attention_heads,
             "max_position_embeddings": arch.max_position_embeddings,
-            "parameters": self.model.num_parameters(),
+            "parameters": (
+                self._num_parameters
+                if self._num_parameters is not None
+                else self.model.num_parameters()
+            ),
             "checkpoint_step": self.checkpoint_step,
             "device": get_device_name(self.device),
+            "quantized": self.quantized,
         }
 
     def tokenize(self, text: str, add_bos: bool, add_eos: bool) -> dict:

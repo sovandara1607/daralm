@@ -26,3 +26,4 @@ training:
   save_interval: 150
   log_interval: 10
   seed: 42
+  compile: true  # measured 1.43x MPS / 1.24x CPU step-time speedup at this scale — Model Optimization Stage 3

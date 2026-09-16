@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from daralm.model.attention import CausalSelfAttention
-from daralm.model.embeddings import RotaryEmbedding
+from daralm.model.embeddings import RotaryEmbedding, apply_rotary_pos_emb
 
 
 def _make_attention(hidden_size=32, num_heads=4, max_pos=64, dropout=0.0):
@@ -99,3 +99,86 @@ def test_no_bias_on_projections():
     assert attn.k_proj.bias is None
     assert attn.v_proj.bias is None
     assert attn.o_proj.bias is None
+
+
+def _manual_attention_forward(attn: CausalSelfAttention, x, rotary_cos, rotary_sin):
+    """Reference implementation matching the pre-SDPA math, for equivalence checks."""
+    import math
+
+    batch_size, seq_len, _ = x.shape
+    q = attn._split_heads(attn.q_proj(x), batch_size, seq_len)
+    k = attn._split_heads(attn.k_proj(x), batch_size, seq_len)
+    v = attn._split_heads(attn.v_proj(x), batch_size, seq_len)
+    q, k = apply_rotary_pos_emb(q, k, rotary_cos, rotary_sin)
+
+    scores = (q @ k.transpose(-2, -1)) / math.sqrt(attn.head_dim)
+    mask = attn.causal_mask[:seq_len, :seq_len]
+    scores = scores.masked_fill(~mask, float("-inf"))
+    probs = torch.softmax(scores, dim=-1)
+    out = probs @ v
+    out = out.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
+    return attn.o_proj(out)
+
+
+def test_sdpa_matches_manual_attention_forward():
+    """SDPA-based forward must produce the same logits as the original manual math."""
+    torch.manual_seed(0)
+    attn, rope = _make_attention(hidden_size=32, num_heads=4, max_pos=16, dropout=0.0)
+    attn.eval()  # no dropout, deterministic comparison
+
+    x = torch.randn(2, 8, 32)
+    cos, sin = rope(seq_len=8, device=x.device)
+
+    out_sdpa, _ = attn(x, cos, sin)
+    out_manual = _manual_attention_forward(attn, x, cos, sin)
+
+    assert torch.allclose(out_sdpa, out_manual, atol=1e-5)
+
+
+def test_sdpa_matches_manual_attention_gradients():
+    """Backward pass through SDPA must match the manual implementation's gradients."""
+    torch.manual_seed(0)
+    attn, rope = _make_attention(hidden_size=32, num_heads=4, max_pos=16, dropout=0.0)
+    attn.eval()
+
+    x = torch.randn(2, 8, 32, requires_grad=True)
+    cos, sin = rope(seq_len=8, device=x.device)
+
+    out_sdpa, _ = attn(x, cos, sin)
+    out_sdpa.sum().backward()
+    grad_sdpa = x.grad.clone()
+    x.grad = None
+
+    out_manual = _manual_attention_forward(attn, x, cos, sin)
+    out_manual.sum().backward()
+    grad_manual = x.grad.clone()
+
+    assert torch.allclose(grad_sdpa, grad_manual, atol=1e-4)
+
+
+def test_decode_with_cache_matches_full_prefill():
+    """Feeding tokens one at a time through the KV cache must match a full prefill."""
+    torch.manual_seed(0)
+    attn, rope = _make_attention(hidden_size=32, num_heads=4, max_pos=16, dropout=0.0)
+    attn.eval()
+
+    seq_len = 5
+    x = torch.randn(1, seq_len, 32)
+    cos_full, sin_full = rope(seq_len=seq_len, device=x.device)
+    with torch.no_grad():
+        out_full, _ = attn(x, cos_full, sin_full)
+
+    # Now replay the same tokens one at a time through the cache.
+    past_key_value = None
+    outs = []
+    for t in range(seq_len):
+        x_t = x[:, t : t + 1, :]
+        cos_t, sin_t = rope(seq_len=1, device=x.device, offset=t)
+        with torch.no_grad():
+            out_t, past_key_value = attn(
+                x_t, cos_t, sin_t, past_key_value=past_key_value, use_cache=True
+            )
+        outs.append(out_t)
+    out_cached = torch.cat(outs, dim=1)
+
+    assert torch.allclose(out_full, out_cached, atol=1e-5)

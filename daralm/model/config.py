@@ -84,6 +84,25 @@ class TrainingConfig(BaseModel):
         description="Cosine decay floor, as a fraction of the peak learning_rate",
     )
     seed: int = Field(default=42, description="Seed for reproducibility; recorded per checkpoint")
+    gradient_checkpointing: bool = Field(
+        default=False,
+        description=(
+            "Trade recompute for memory by not storing each TransformerBlock's "
+            "activations for backward (torch.utils.checkpoint). Only worth enabling "
+            "if it lets batch_size increase within the same memory budget — see "
+            "Model Optimization Stage 3."
+        ),
+    )
+    compile: bool = Field(
+        default=False,
+        description=(
+            "torch.compile the training step in place (nn.Module.compile — keeps "
+            "state_dict keys and the model's class unchanged, unlike wrapping with "
+            "torch.compile(model), which would break checkpoint compatibility). "
+            "Measured ~1.2-1.4x step-time speedup on this project's CPU/MPS targets "
+            "at 50m scale — see Model Optimization Stage 3."
+        ),
+    )
 
     @model_validator(mode="after")
     def check_warmup_within_max_steps(self) -> TrainingConfig:

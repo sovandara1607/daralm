@@ -286,3 +286,78 @@ def test_cache_plus_new_tokens_beyond_max_position_raises():
     too_many_new = torch.randint(0, config.vocab_size, (1, 3))  # 6 + 3 > 8
     with pytest.raises(ValueError):
         model(too_many_new, past_key_values=output.past_key_values, use_cache=True)
+
+
+def test_gradient_checkpointing_off_by_default():
+    model = DaraLMTransformer(_tiny_architecture())
+    assert model.gradient_checkpointing is False
+
+
+def test_gradient_checkpointing_enable_disable_toggle_the_flag():
+    model = DaraLMTransformer(_tiny_architecture())
+    model.gradient_checkpointing_enable()
+    assert model.gradient_checkpointing is True
+    model.gradient_checkpointing_disable()
+    assert model.gradient_checkpointing is False
+
+
+def test_gradient_checkpointing_matches_normal_forward_logits():
+    """Recomputing blocks on backward must not change the forward output."""
+    torch.manual_seed(0)
+    config = _tiny_architecture()
+    model = DaraLMTransformer(config)
+    model.train()
+    input_ids = torch.randint(0, config.vocab_size, (2, 8))
+
+    output_normal = model(input_ids, labels=input_ids)
+
+    model.gradient_checkpointing_enable()
+    output_checkpointed = model(input_ids, labels=input_ids)
+
+    assert torch.allclose(output_normal.logits, output_checkpointed.logits, atol=1e-5)
+    assert torch.allclose(output_normal.loss, output_checkpointed.loss, atol=1e-5)
+
+
+def test_gradient_checkpointing_matches_normal_forward_gradients():
+    torch.manual_seed(0)
+    config = _tiny_architecture()
+    input_ids = torch.randint(0, config.vocab_size, (2, 8))
+
+    model_normal = DaraLMTransformer(config)
+    # Give the checkpointed copy identical weights via a state_dict clone, rather
+    # than re-seeding — re-seeding would also have to account for every RNG draw
+    # (including input_ids above) happening in exactly the same order to match.
+    model_checkpointed = DaraLMTransformer(config)
+    model_checkpointed.load_state_dict(model_normal.state_dict())
+
+    model_normal.train()
+    model_normal(input_ids, labels=input_ids).loss.backward()
+    grads_normal = [p.grad.clone() for p in model_normal.parameters()]
+
+    model_checkpointed.train()
+    model_checkpointed.gradient_checkpointing_enable()
+    model_checkpointed(input_ids, labels=input_ids).loss.backward()
+    grads_checkpointed = [p.grad.clone() for p in model_checkpointed.parameters()]
+
+    for g_normal, g_checkpointed in zip(grads_normal, grads_checkpointed, strict=True):
+        assert torch.allclose(g_normal, g_checkpointed, atol=1e-4)
+
+
+def test_gradient_checkpointing_is_a_noop_in_eval_mode():
+    """Checkpointing only kicks in during training — eval-mode generation must be
+    unaffected (and never combined with a KV cache, which eval-mode use_cache uses)."""
+    torch.manual_seed(0)
+    config = _tiny_architecture()
+    model = DaraLMTransformer(config)
+    model.eval()
+    input_ids = torch.randint(0, config.vocab_size, (1, 6))
+
+    with torch.no_grad():
+        output_normal = model(input_ids, use_cache=True)
+
+    model.gradient_checkpointing_enable()
+    with torch.no_grad():
+        output_checkpointed = model(input_ids, use_cache=True)
+
+    assert torch.allclose(output_normal.logits, output_checkpointed.logits, atol=1e-5)
+    assert output_checkpointed.past_key_values is not None

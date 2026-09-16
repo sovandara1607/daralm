@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import math
-
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from daralm.model.embeddings import apply_rotary_pos_emb
@@ -35,9 +34,14 @@ class CausalSelfAttention(nn.Module):
         self.v_proj = nn.Linear(hidden_size, hidden_size, bias=False)
         self.o_proj = nn.Linear(hidden_size, hidden_size, bias=False)
 
-        self.attn_dropout = nn.Dropout(dropout)
+        # Applied via scaled_dot_product_attention's dropout_p below, not as a
+        # submodule — SDPA's fused kernels never materialize attention weights
+        # for an nn.Dropout to act on.
+        self.attn_dropout_p = dropout
         self.resid_dropout = nn.Dropout(dropout)
 
+        # Still exposed for the decode-with-cache mask below and for tests
+        # asserting the mask shape directly.
         causal_mask = torch.tril(
             torch.ones(max_position_embeddings, max_position_embeddings, dtype=torch.bool)
         )
@@ -71,16 +75,21 @@ class CausalSelfAttention(nn.Module):
 
         past_len = k.size(2) - seq_len  # 0 when there's no cache yet
 
-        scores = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        if past_len == 0:
+            # Full prefill: SDPA's own causal mask is exactly right, and cheaper
+            # than materializing a boolean mask ourselves.
+            attn_mask = None
+            is_causal = True
+        else:
+            # Continuing generation from a cache: each new query sees every
+            # cached key plus earlier keys within this chunk, never a later one.
+            attn_mask = self.causal_mask[past_len : past_len + seq_len, : past_len + seq_len]
+            is_causal = False
 
-        # Each query sees cached keys and earlier keys in the current sequence.
-        mask = self.causal_mask[past_len : past_len + seq_len, : past_len + seq_len]
-        scores = scores.masked_fill(~mask, float("-inf"))
-
-        probs = torch.softmax(scores, dim=-1)
-        probs = self.attn_dropout(probs)
-
-        out = probs @ v  # (batch, heads, seq_len, head_dim)
+        dropout_p = self.attn_dropout_p if self.training else 0.0
+        out = F.scaled_dot_product_attention(
+            q, k, v, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal
+        )
         out = out.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
 
         out = self.o_proj(out)
